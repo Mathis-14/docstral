@@ -106,3 +106,11 @@ never rewrite history. -->
   candidate. Why: HTML covered all 13 sampled pages and every rendered table
   at materially lower implementation cost; revisit payload extraction when
   evaluation failures are attributable to hidden tabs or a demo requires it.
+- D003 — Canonical URL = final URL after redirects: HTTPS, docs.mistral.ai;
+  no /en prefix, trailing slash, query, fragment, or userinfo. V1 excludes
+  /fr, assets, /api, /api/endpoint, /resources/cookbooks, /resources/deprecated,
+  /vibe/chat-legacy. Why: one page identity; API and legacy stay deferred.
+- D004 — Parse robots.txt with protego under RFC 9309: 4xx allows;
+  429, 5xx, or network failure aborts; wildcards and longest match apply.
+  Cadence is the maximum of configured delay, Crawl-delay, and Request-rate.
+  Why: the standard library parser ignores wildcards and precedence.
