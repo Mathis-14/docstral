@@ -91,3 +91,18 @@ tasks; update it when a durable convention or constraint is learned.
 
 <!-- Durable implementation decisions only. WHY first. Append; supersede,
 never rewrite history. -->
+
+- D001 — Discover documentation from the sitemap, then follow in-scope
+  internal links; keep requested, final, and canonical URLs; separate
+  discovery from admission and record a reason for every URL. Why: the
+  sitemap omits roughly forty public documentation pages and its counts can
+  change between runs, so every run measures its inventory; a publishable
+  crawl has zero unexplained rejections and zero unknown structures, and an
+  unreachable `robots.txt` caused by a 5xx response disallows crawling under
+  RFC 9309.
+- D002 — Extract rendered HTML with one roughly 120-line standard-library
+  extractor for version 1, accepting an estimated 7% information loss from
+  inactive tabs and closed FAQs; keep React payload extraction as the next
+  candidate. Why: HTML covered all 13 sampled pages and every rendered table
+  at materially lower implementation cost; revisit payload extraction when
+  evaluation failures are attributable to hidden tabs or a demo requires it.

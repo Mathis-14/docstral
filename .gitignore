@@ -3,7 +3,9 @@
 .venv/
 
 data/
-experiments/
+experiments/**/raw/
+experiments/**/derived/
+experiments/**/*.py
 
 __pycache__/
 *.py[cod]
