@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://docs.mistral.ai/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/api-reference</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/api-reference" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/api-reference" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/api-reference" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/api-reference</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/api-reference" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/api-reference" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/api-reference" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/authentication</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/authentication" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/authentication" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/authentication" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/authentication</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/authentication" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/authentication" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/authentication" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/manage-groups-roles</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/manage-groups-roles" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/manage-groups-roles" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/manage-groups-roles" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/manage-groups-roles</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/manage-groups-roles" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/manage-groups-roles" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/manage-groups-roles" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/manage-users</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/manage-users" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/manage-users" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/manage-users" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/manage-users</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/manage-users" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/manage-users" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/manage-users" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/manage-workspaces</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/manage-workspaces" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/manage-workspaces" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/manage-workspaces" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/manage-workspaces</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/manage-workspaces" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/manage-workspaces" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/manage-workspaces" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/overview</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/overview" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/overview" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/overview" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/overview</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/overview" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/overview" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/overview" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/usage-metrics</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/usage-metrics" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/usage-metrics" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/usage-metrics" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/usage-metrics</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/usage-metrics" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/usage-metrics" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/usage-metrics" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/admin/admin-api/user-provisioning</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/user-provisioning" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/user-provisioning" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/user-provisioning" />
+  </url>
+  <url>
+    <loc>https://docs.mistral.ai/fr/admin/admin-api/user-provisioning</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://docs.mistral.ai/admin/admin-api/user-provisioning" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://docs.mistral.ai/fr/admin/admin-api/user-provisioning" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://docs.mistral.ai/admin/admin-api/user-provisioning" />
+  </url>
+</urlset>
