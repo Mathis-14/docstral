@@ -116,3 +116,8 @@ never rewrite history. -->
   Why: the standard library parser ignores wildcards and precedence.
 - D005 — Lowercase paths. Why: the site ignored path casing on 3 September 2026;
   variants are one page and both sitemap advisories become lowercase.
+- D006 — Count outbound and malformed links; record decisions only for
+  docs.mistral.ai URLs. Why: 295 outbound hrefs were 23% of the manifest and are
+  not crawl inventory; a malformed href is a defect of the link, not of the page
+  that carries it; an outbound redirect of a documentation URL stays recorded as
+  `outside_host`.
