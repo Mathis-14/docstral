@@ -2,8 +2,8 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from docstral_ingestion.fetch import FetchResult
-from docstral_ingestion.sitemap import (
+from docstral_worker.fetch import FetchResult
+from docstral_worker.sitemap import (
     SitemapFetchError,
     SitemapIndexError,
     SitemapParseError,

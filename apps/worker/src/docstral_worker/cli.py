@@ -7,12 +7,12 @@ from pathlib import Path
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
-from docstral_ingestion import IngestionError
-from docstral_ingestion.crawl import MAX_PAGES, crawl
-from docstral_ingestion.extract import ExtractionError, extract_snapshot
-from docstral_ingestion.fetch import FetchConfig, HttpFetcher
-from docstral_ingestion.sitemap import fetch_sitemap
-from docstral_ingestion.snapshot import (
+from docstral_worker import IngestionError
+from docstral_worker.crawl import MAX_PAGES, crawl
+from docstral_worker.extract import ExtractionError, extract_snapshot
+from docstral_worker.fetch import FetchConfig, HttpFetcher
+from docstral_worker.sitemap import fetch_sitemap
+from docstral_worker.snapshot import (
     current_snapshot,
     write_snapshot,
 )
@@ -37,7 +37,7 @@ class ExtractConfig(BaseModel):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the Docstral ingestion command line interface."""
+    """Run the Docstral worker command line interface."""
     args = _parser().parse_args(argv)
     _configure_logging()
     if args.command == "crawl":
@@ -109,7 +109,7 @@ def _run_extract(config: ExtractConfig) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="docstral-ingestion")
+    parser = argparse.ArgumentParser(prog="docstral-worker")
     commands = parser.add_subparsers(dest="command", required=True)
     crawl_parser = commands.add_parser(
         "crawl",

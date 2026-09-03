@@ -32,7 +32,7 @@ ban-relative-imports = "all"
 [tool.mypy]
 python_version = "3.13"
 strict = true
-files = ["apps/ingestion/src", "apps/ingestion/tests"]
+files = ["apps/worker/src", "apps/worker/tests"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"

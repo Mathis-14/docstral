@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "docstral-ingestion"
+name = "docstral-worker"
 version = "0.1.0"
-description = "Documentation ingestion for Docstral"
+description = "Documentation worker for Docstral"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "beautifulsoup4",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-docstral-ingestion = "docstral_ingestion.cli:main"
+docstral-worker = "docstral_worker.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/docstral_ingestion"]
+packages = ["src/docstral_worker"]

@@ -3,8 +3,8 @@ from collections.abc import Callable
 from protego import Protego
 from pydantic import BaseModel, ConfigDict, Field
 
-from docstral_ingestion import IngestionError, _safe_url
-from docstral_ingestion.urls import DOCS_HOST
+from docstral_worker import IngestionError, _safe_url
+from docstral_worker.urls import DOCS_HOST
 
 ROBOTS_AGENT = "Docstral"
 ROBOTS_URL = f"https://{DOCS_HOST}/robots.txt"

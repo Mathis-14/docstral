@@ -3,22 +3,22 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from docstral_ingestion.cli import main
-from docstral_ingestion.crawl import (
+from docstral_worker.cli import main
+from docstral_worker.crawl import (
     CrawlCounts,
     CrawlEntry,
     CrawlResult,
     DiscoveryVia,
     PageDecision,
 )
-from docstral_ingestion.extract import (
+from docstral_worker.extract import (
     DocsHtmlConverter,
     ExtractionError,
     extract_page,
     outline,
 )
-from docstral_ingestion.sitemap import SitemapSnapshot
-from docstral_ingestion.snapshot import write_snapshot
+from docstral_worker.sitemap import SitemapSnapshot
+from docstral_worker.snapshot import write_snapshot
 from mistralai.search.toolkit.ingestion import File
 from mistralai.search.toolkit.ingestion.extractors import (
     HTMLExtractor,
