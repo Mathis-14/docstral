@@ -15,5 +15,8 @@ dependencies = [
     "structlog",
 ]
 
+[project.scripts]
+docstral-ingestion = "docstral_ingestion.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/docstral_ingestion"]
