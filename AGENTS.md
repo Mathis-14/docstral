@@ -121,3 +121,8 @@ never rewrite history. -->
   not crawl inventory; a malformed href is a defect of the link, not of the page
   that carries it; an outbound redirect of a documentation URL stays recorded as
   `outside_host`.
+- D007 — Write autonomous snapshots with their raw bytes and manifest;
+  complete runs update `current`, incomplete runs end in `-failed` without
+  changing `current`, and preflight failures create no directory. Why:
+  consumers see only complete, independently verifiable snapshots while
+  failed runs remain auditable.
