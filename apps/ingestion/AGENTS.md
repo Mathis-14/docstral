@@ -7,6 +7,7 @@
 - Format check: `uv run ruff format --check apps/ingestion`
 - Typecheck: `uv run mypy`
 - Test: `uv run pytest apps/ingestion/tests`
+- Crawl: `uv run docstral-ingestion crawl`
 
 ## Rules
 
@@ -16,3 +17,5 @@
 - Respect `robots.txt`, request cadence, retry bounds, and conditional requests.
 - Use frozen Pydantic models for data crossing module boundaries.
 - Keep network tests local with `httpx.MockTransport`.
+- Snapshots live under `data/snapshots/<UTC timestamp>/`; `current` names the
+  latest complete run and is the only snapshot consumers read.
