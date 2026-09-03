@@ -70,6 +70,7 @@ def canonicalize(url: str, base: str) -> CanonicalUrl:
     path = parts.path or ("/" if netloc else "")
     if parts.hostname and parts.hostname.lower() == DOCS_HOST:
         scheme = "https"
+        path = path.lower()
         if path == "/en":
             path = "/"
         elif path.startswith("/en/"):
