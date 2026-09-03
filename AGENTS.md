@@ -114,3 +114,5 @@ never rewrite history. -->
   429, 5xx, or network failure aborts; wildcards and longest match apply.
   Cadence is the maximum of configured delay, Crawl-delay, and Request-rate.
   Why: the standard library parser ignores wildcards and precedence.
+- D005 — Lowercase paths. Why: the site ignored path casing on 3 September 2026;
+  variants are one page and both sitemap advisories become lowercase.

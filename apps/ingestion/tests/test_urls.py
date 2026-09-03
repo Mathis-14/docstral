@@ -13,6 +13,7 @@ BASE = "https://docs.mistral.ai/getting-started/overview"
     ("raw", "expected_url", "expected_anchor"),
     [
         ("/studio/", "https://docs.mistral.ai/studio", None),
+        ("/Studio", "https://docs.mistral.ai/studio", None),
         ("/en/studio", "https://docs.mistral.ai/studio", None),
         ("/en", "https://docs.mistral.ai/", None),
         ("/enterprise", "https://docs.mistral.ai/enterprise", None),
