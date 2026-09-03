@@ -38,6 +38,10 @@ class RejectionReason(StrEnum):
     FRENCH = "french"
     ASSET = "asset"
     EXCLUDED_ROUTE = "excluded_route"
+    NON_HTML = "non_html"
+    GONE = "gone"
+    DUPLICATE = "duplicate"
+    ROBOTS_DISALLOWED = "robots_disallowed"
 
 
 class CanonicalUrl(BaseModel):
