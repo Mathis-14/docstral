@@ -23,7 +23,6 @@ from docstral_ingestion.crawl import (
     CrawlCounts,
     CrawlEntry,
     CrawlResult,
-    PageCache,
     PageDecision,
 )
 from docstral_ingestion.sitemap import SitemapSnapshot
@@ -73,9 +72,10 @@ class SnapshotManifest(BaseModel):
         return self
 
 
-class _CurrentSnapshot:
+class CurrentSnapshot:
     def __init__(self, directory: Path, manifest: SnapshotManifest) -> None:
-        self._directory = directory
+        self.directory = directory
+        self.manifest = manifest
         self._pages = {
             page.canonical_url: page
             for page in manifest.pages
@@ -88,10 +88,10 @@ class _CurrentSnapshot:
             return None
         if page.raw_sha256 is None:
             raise SnapshotReadError(
-                self._directory / MANIFEST_FILE,
+                self.directory / MANIFEST_FILE,
                 f"invalid raw metadata for {canonical_url!r}",
             )
-        path = self._directory / _raw_path(canonical_url)
+        path = self.directory / _raw_path(canonical_url)
         try:
             body = path.read_bytes()
         except OSError as exc:
@@ -103,8 +103,8 @@ class _CurrentSnapshot:
         )
 
 
-def load_current_snapshot(out: Path) -> PageCache | None:
-    """Load the snapshot named by ``current`` without creating directories."""
+def current_snapshot(out: Path) -> CurrentSnapshot | None:
+    """Return the snapshot named by ``current``."""
     pointer = out / CURRENT_FILE
     if not pointer.exists():
         if pointer.is_symlink():
@@ -125,7 +125,7 @@ def load_current_snapshot(out: Path) -> PageCache | None:
         )
     except (OSError, UnicodeError, ValidationError) as exc:
         raise SnapshotReadError(manifest_path, str(exc)) from exc
-    return _CurrentSnapshot(directory, manifest)
+    return CurrentSnapshot(directory, manifest)
 
 
 def write_snapshot(
@@ -192,9 +192,13 @@ def _write_raw_pages(directory: Path, pages: tuple[CrawlEntry, ...]) -> None:
 
 
 def _raw_path(canonical_url: str) -> str:
+    return f"raw/{page_slug(canonical_url)}.html"
+
+
+def page_slug(canonical_url: str) -> str:
+    """Return the stable filename stem for a canonical documentation URL."""
     path = urlsplit(canonical_url).path.strip("/")
-    slug = path.replace("/", "__") if path else "index"
-    return f"raw/{slug}.html"
+    return path.replace("/", "__") if path else "index"
 
 
 def _snapshot_name(crawled_at: datetime, complete: bool) -> str:

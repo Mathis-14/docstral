@@ -8,6 +8,7 @@
 - Typecheck: `uv run mypy`
 - Test: `uv run pytest apps/ingestion/tests`
 - Crawl: `uv run docstral-ingestion crawl`
+- Extract: `uv run docstral-ingestion extract`
 
 ## Rules
 
@@ -19,3 +20,7 @@
 - Keep network tests local with `httpx.MockTransport`.
 - Snapshots live under `data/snapshots/<UTC timestamp>/`; `current` names the
   latest complete run and is the only snapshot consumers read.
+- Extractions live under `data/extracted/<snapshot>/pages/<slug>.md`; an existing
+  destination is refused, never overwritten.
+- Only `crawl` touches the network; `extract` and every later stage read the
+  `current` snapshot.

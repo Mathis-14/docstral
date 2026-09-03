@@ -16,7 +16,8 @@ from docstral_ingestion.snapshot import (
     SnapshotCollisionError,
     SnapshotManifest,
     SnapshotReadError,
-    load_current_snapshot,
+    current_snapshot,
+    page_slug,
     write_snapshot,
 )
 from docstral_ingestion.urls import RejectionReason
@@ -116,15 +117,18 @@ def test_writes_complete_autonomous_snapshot_and_loads_cache(tmp_path: Path) -> 
     ]
     assert "body" not in payload["pages"][0]
     assert SnapshotManifest.model_validate(payload).counts.stored == 2
+    current = current_snapshot(tmp_path)
+    assert current is not None
+    assert current.directory == destination
+    assert current.manifest.counts.stored == 2
+    assert page_slug(f"{DOCS}/guide/start") == "guide__start"
     report = (destination / "report.md").read_text()
     assert "- Status: complete" in report
     assert "- Pages stored: 2" in report
     assert "- External links: 0" in report
     assert "- Malformed links: 0" in report
 
-    cache = load_current_snapshot(tmp_path)
-    assert cache is not None
-    cached = cache.get(f"{DOCS}/guide/start")
+    cached = current.get(f"{DOCS}/guide/start")
     assert cached is not None
     assert cached.body == guide.body
     assert cached.raw_sha256 == guide.raw_sha256
@@ -135,7 +139,7 @@ def test_writes_complete_autonomous_snapshot_and_loads_cache(tmp_path: Path) -> 
 def test_missing_current_does_not_create_output_directory(tmp_path: Path) -> None:
     out = tmp_path / "snapshots"
 
-    assert load_current_snapshot(out) is None
+    assert current_snapshot(out) is None
     assert not out.exists()
 
 
@@ -143,7 +147,7 @@ def test_current_rejects_a_path_outside_the_snapshot_directory(tmp_path: Path) -
     (tmp_path / "current").write_text("..\n")
 
     with pytest.raises(SnapshotReadError, match="successful snapshot directory"):
-        load_current_snapshot(tmp_path)
+        current_snapshot(tmp_path)
 
 
 def test_failed_snapshot_preserves_current_and_previous_snapshot(
