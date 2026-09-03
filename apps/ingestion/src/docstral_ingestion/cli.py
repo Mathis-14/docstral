@@ -9,19 +9,31 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from docstral_ingestion import IngestionError
 from docstral_ingestion.crawl import MAX_PAGES, crawl
+from docstral_ingestion.extract import ExtractionError, extract_snapshot
 from docstral_ingestion.fetch import FetchConfig, HttpFetcher
 from docstral_ingestion.sitemap import fetch_sitemap
-from docstral_ingestion.snapshot import load_current_snapshot, write_snapshot
+from docstral_ingestion.snapshot import (
+    current_snapshot,
+    write_snapshot,
+)
 
-DEFAULT_OUT = Path("data/snapshots")
+DEFAULT_SNAPSHOTS = Path("data/snapshots")
+DEFAULT_EXTRACTED = Path("data/extracted")
 
 
 class CrawlConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    out: Path = DEFAULT_OUT
+    out: Path = DEFAULT_SNAPSHOTS
     delay: float = Field(default=0.25, ge=0.0, allow_inf_nan=False)
     max_pages: int = Field(default=MAX_PAGES, ge=1, le=MAX_PAGES)
+
+
+class ExtractConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    snapshots: Path = DEFAULT_SNAPSHOTS
+    out: Path = DEFAULT_EXTRACTED
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -32,13 +44,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_crawl(
             CrawlConfig(out=args.out, delay=args.delay, max_pages=args.max_pages)
         )
+    if args.command == "extract":
+        return _run_extract(ExtractConfig(snapshots=args.snapshots, out=args.out))
     raise AssertionError("argparse accepted an unknown command")
 
 
 def _run_crawl(config: CrawlConfig) -> int:
     logger = structlog.get_logger(__name__)
     try:
-        cache = load_current_snapshot(config.out)
+        cache = current_snapshot(config.out)
         with HttpFetcher(FetchConfig(delay_seconds=config.delay)) as fetcher:
             sitemap = fetch_sitemap(fetcher)
             crawled_at = datetime.now(UTC)
@@ -66,6 +80,34 @@ def _run_crawl(config: CrawlConfig) -> int:
     return 0 if result.complete else 1
 
 
+def _run_extract(config: ExtractConfig) -> int:
+    logger = structlog.get_logger(__name__)
+    try:
+        snapshot = current_snapshot(config.snapshots)
+        if snapshot is None:
+            raise ExtractionError(
+                f"No current snapshot under {str(config.snapshots)!r}"
+            )
+        destination = config.out / snapshot.directory.name
+        result = extract_snapshot(snapshot, destination)
+    except IngestionError as exc:
+        logger.error(
+            "extract_failed",
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+        return 1
+    logger.info(
+        "extract_finished",
+        snapshot=snapshot.directory.name,
+        destination=str(destination),
+        converted=result.converted,
+        failed=result.failed,
+        duration_seconds=round(result.duration_seconds, 3),
+    )
+    return 1 if result.failed else 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docstral-ingestion")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -75,7 +117,7 @@ def _parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     crawl_parser.add_argument(
-        "--out", type=Path, default=DEFAULT_OUT, help="snapshot root"
+        "--out", type=Path, default=DEFAULT_SNAPSHOTS, help="snapshot root"
     )
     crawl_parser.add_argument(
         "--delay",
@@ -88,6 +130,17 @@ def _parser() -> argparse.ArgumentParser:
         type=_page_limit,
         default=MAX_PAGES,
         help="maximum number of pages to fetch",
+    )
+    extract_parser = commands.add_parser(
+        "extract",
+        help="convert the current raw snapshot to Markdown",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    extract_parser.add_argument(
+        "--snapshots", type=Path, default=DEFAULT_SNAPSHOTS, help="snapshot root"
+    )
+    extract_parser.add_argument(
+        "--out", type=Path, default=DEFAULT_EXTRACTED, help="extraction root"
     )
     return parser
 

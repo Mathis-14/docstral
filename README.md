@@ -17,3 +17,9 @@ Set `MISTRAL_API_KEY` in `.env`.
 ```sh
 uv run docstral-ingestion crawl
 ```
+
+## Extract
+
+```sh
+uv run docstral-ingestion extract
+```

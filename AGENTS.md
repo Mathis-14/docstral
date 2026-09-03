@@ -126,3 +126,11 @@ never rewrite history. -->
   changing `current`, and preflight failures create no directory. Why:
   consumers see only complete, independently verifiable snapshots while
   failed runs remain auditable.
+- D008 — Convert HTML with the toolkit's `MarkdownifyConverter` behind a
+  Docstral pre-clean (select `main article.prose`, drop `.hidden`, copy
+  the `python` and `curl` `data-language` values onto `<code>`); supersedes the
+  standard-library extractor of D002, rendered HTML as the source stands. Why:
+  measured on the 13 spike pages on 3 September 2026, the toolkit converter
+  loses no table, labels every fence the site labels, and keeps identifiers
+  intact inside inline code (markdownify still escapes underscores in plain
+  prose); a custom converter would be ~180 lines for the same output.
