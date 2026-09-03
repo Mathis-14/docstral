@@ -134,3 +134,11 @@ never rewrite history. -->
   loses no table, labels every fence the site labels, and keeps identifiers
   intact inside inline code (markdownify still escapes underscores in plain
   prose); a custom converter would be ~180 lines for the same output.
+- D009 — Organize deployable processes by runtime responsibility under
+  `apps/`: `worker` owns corpus mutations, `backend` will own read-only
+  retrieval and Q&A, and `mcp` will remain a thin protocol adapter. Create an
+  application only when it has runnable code; keep the toolkit's `VespaApp`
+  inside its sole consumer, then extract stable search code to `packages/`
+  only when a second application consumes it. Why: runtime names remain clear,
+  ingestion does not become a catch-all, and shared code follows observed use;
+  local execution remains the baseline until deployment work is undertaken.

@@ -2,8 +2,8 @@ from collections.abc import Callable
 
 import httpx
 import pytest
-from docstral_ingestion.fetch import FetchConfig, HttpFetcher
-from docstral_ingestion.robots import (
+from docstral_worker.fetch import FetchConfig, HttpFetcher
+from docstral_worker.robots import (
     ROBOTS_URL,
     RobotsDeniedError,
     RobotsPolicy,

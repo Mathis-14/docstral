@@ -1,8 +1,8 @@
 from hashlib import sha256
 
 import pytest
-from docstral_ingestion import IngestionError
-from docstral_ingestion.crawl import (
+from docstral_worker import IngestionError
+from docstral_worker.crawl import (
     MAX_PAGES,
     CachedPage,
     CrawlResult,
@@ -10,15 +10,15 @@ from docstral_ingestion.crawl import (
     PageDecision,
     crawl,
 )
-from docstral_ingestion.fetch import (
+from docstral_worker.fetch import (
     FetchError,
     FetchHttpStatusError,
     FetchResult,
     RetryAfterTooLongError,
 )
-from docstral_ingestion.robots import RobotsDeniedError, RobotsUnavailableError
-from docstral_ingestion.sitemap import SitemapSnapshot
-from docstral_ingestion.urls import RejectionReason
+from docstral_worker.robots import RobotsDeniedError, RobotsUnavailableError
+from docstral_worker.sitemap import SitemapSnapshot
+from docstral_worker.urls import RejectionReason
 
 DOCS = "https://docs.mistral.ai"
 

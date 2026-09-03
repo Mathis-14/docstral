@@ -17,15 +17,15 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-from docstral_ingestion import IngestionError
-from docstral_ingestion.crawl import (
+from docstral_worker import IngestionError
+from docstral_worker.crawl import (
     CachedPage,
     CrawlCounts,
     CrawlEntry,
     CrawlResult,
     PageDecision,
 )
-from docstral_ingestion.sitemap import SitemapSnapshot
+from docstral_worker.sitemap import SitemapSnapshot
 
 MANIFEST_FILE = "manifest.json"
 REPORT_FILE = "report.md"

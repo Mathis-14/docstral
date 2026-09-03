@@ -4,15 +4,15 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from docstral_ingestion.crawl import (
+from docstral_worker.crawl import (
     CrawlCounts,
     CrawlEntry,
     CrawlResult,
     DiscoveryVia,
     PageDecision,
 )
-from docstral_ingestion.sitemap import SitemapSnapshot
-from docstral_ingestion.snapshot import (
+from docstral_worker.sitemap import SitemapSnapshot
+from docstral_worker.snapshot import (
     SnapshotCollisionError,
     SnapshotManifest,
     SnapshotReadError,
@@ -20,7 +20,7 @@ from docstral_ingestion.snapshot import (
     page_slug,
     write_snapshot,
 )
-from docstral_ingestion.urls import RejectionReason
+from docstral_worker.urls import RejectionReason
 
 DOCS = "https://docs.mistral.ai"
 CRAWLED_AT = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)

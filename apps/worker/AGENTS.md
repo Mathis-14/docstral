@@ -1,14 +1,14 @@
-# Ingestion
+# Worker
 
 ## Commands
 
 - Install: `uv sync --all-packages`
-- Lint: `uv run ruff check apps/ingestion`
-- Format check: `uv run ruff format --check apps/ingestion`
+- Lint: `uv run ruff check apps/worker`
+- Format check: `uv run ruff format --check apps/worker`
 - Typecheck: `uv run mypy`
-- Test: `uv run pytest apps/ingestion/tests`
-- Crawl: `uv run docstral-ingestion crawl`
-- Extract: `uv run docstral-ingestion extract`
+- Test: `uv run pytest apps/worker/tests`
+- Crawl: `uv run docstral-worker crawl`
+- Extract: `uv run docstral-worker extract`
 
 ## Rules
 

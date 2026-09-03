@@ -16,17 +16,17 @@ import structlog
 from bs4 import BeautifulSoup, ParserRejectedMarkup
 from pydantic import BaseModel, ConfigDict, Field
 
-from docstral_ingestion import IngestionError, _safe_url
-from docstral_ingestion.fetch import (
+from docstral_worker import IngestionError, _safe_url
+from docstral_worker.fetch import (
     REDIRECT_STATUSES,
     Fetcher,
     FetchHttpStatusError,
     FetchResult,
     RetryAfterTooLongError,
 )
-from docstral_ingestion.robots import RobotsDeniedError, RobotsUnavailableError
-from docstral_ingestion.sitemap import SitemapSnapshot
-from docstral_ingestion.urls import (
+from docstral_worker.robots import RobotsDeniedError, RobotsUnavailableError
+from docstral_worker.sitemap import SitemapSnapshot
+from docstral_worker.urls import (
     CanonicalUrl,
     RejectionReason,
     UrlCanonicalizationError,

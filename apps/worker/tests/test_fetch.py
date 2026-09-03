@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 import pytest
-from docstral_ingestion.fetch import (
+from docstral_worker.fetch import (
     USER_AGENT,
     FetchConfig,
     Fetcher,
@@ -15,7 +15,7 @@ from docstral_ingestion.fetch import (
     RedirectLimitError,
     RetryAfterTooLongError,
 )
-from docstral_ingestion.robots import RobotsDeniedError, RobotsUnavailableError
+from docstral_worker.robots import RobotsDeniedError, RobotsUnavailableError
 
 DOCS = "https://docs.mistral.ai"
 WALL_TIME = datetime(2026, 1, 1, tzinfo=UTC)

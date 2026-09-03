@@ -13,15 +13,15 @@ from urllib.parse import urljoin
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from docstral_ingestion import IngestionError, _safe_url
-from docstral_ingestion.robots import (
+from docstral_worker import IngestionError, _safe_url
+from docstral_worker.robots import (
     ROBOTS_URL,
     RobotsPolicy,
     RobotsResponse,
     RobotsUnavailableError,
     load_robots,
 )
-from docstral_ingestion.urls import DOCS_HOST, is_docs_url
+from docstral_worker.urls import DOCS_HOST, is_docs_url
 
 USER_AGENT = "Docstral/0.1 (+https://github.com/Mathis-14/docstral)"
 MAX_ATTEMPTS = 3

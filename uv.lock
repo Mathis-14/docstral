@@ -9,7 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "docstral",
-    "docstral-ingestion",
+    "docstral-worker",
 ]
 
 [[package]]
@@ -272,9 +272,9 @@ dev = [
 ]
 
 [[package]]
-name = "docstral-ingestion"
+name = "docstral-worker"
 version = "0.1.0"
-source = { editable = "apps/ingestion" }
+source = { editable = "apps/worker" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "httpx" },

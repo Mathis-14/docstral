@@ -13,9 +13,9 @@ from mistralai.search.toolkit.ingestion.extractors.html_converter import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from docstral_ingestion import IngestionError, _safe_url
-from docstral_ingestion.crawl import SHA256_PATTERN, PageDecision
-from docstral_ingestion.snapshot import CurrentSnapshot, page_slug
+from docstral_worker import IngestionError, _safe_url
+from docstral_worker.crawl import SHA256_PATTERN, PageDecision
+from docstral_worker.snapshot import CurrentSnapshot, page_slug
 
 _TITLE_SUFFIX = " | Mistral Docs"
 _CODE_LANGUAGES = frozenset({"curl", "python"})

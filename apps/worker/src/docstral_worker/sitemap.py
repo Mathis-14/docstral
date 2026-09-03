@@ -4,9 +4,9 @@ from xml.etree import ElementTree
 
 from pydantic import BaseModel, ConfigDict
 
-from docstral_ingestion import IngestionError, _safe_url
-from docstral_ingestion.fetch import REDIRECT_STATUSES, Fetcher
-from docstral_ingestion.urls import DOCS_HOST
+from docstral_worker import IngestionError, _safe_url
+from docstral_worker.fetch import REDIRECT_STATUSES, Fetcher
+from docstral_worker.urls import DOCS_HOST
 
 SITEMAP_URL = "https://docs.mistral.ai/sitemap.xml"
 

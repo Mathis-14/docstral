@@ -3,7 +3,7 @@ from urllib.parse import SplitResult, urljoin, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict
 
-from docstral_ingestion import IngestionError, _safe_url
+from docstral_worker import IngestionError, _safe_url
 
 DOCS_HOST = "docs.mistral.ai"
 
