@@ -160,3 +160,15 @@ never rewrite history. -->
   behavior-neutral extraction immediately before the backend retrieval PR.
   Why: worker ingestion and backend retrieval need the same index contract,
   while neither application should depend on the other or duplicate it.
+- D012 — Start backend retrieval with one Search Toolkit `VectorRetriever`
+  over the shared `docstral_vespa` index; require callers to choose `top_k`,
+  preserve ranked chunks and duplicate sources, and expose a typed Docstral
+  result with the fields needed for later citations. Describe the Vespa path
+  as hybrid candidate selection with dense ranking: the retriever sends query
+  text and embedding, while D010 keeps all lexical ranking weights at zero.
+  Keep the interactive embedder on the toolkit's three-retry default rather
+  than the worker's six-retry batch policy. Do not add `QueryEngine`, keyword
+  storage, preprocessing, reranking, diversification, or semantic caching
+  until retrieval evaluation demonstrates the specific failure it addresses.
+  Why: this is the smallest read path that exercises the real index, keeps
+  failures attributable, and gives the future MCP a stable citation boundary.

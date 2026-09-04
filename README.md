@@ -14,9 +14,10 @@ Set `MISTRAL_API_KEY` in `.env`.
 
 ## Architecture
 
-`apps/worker` is currently the only application. It runs locally and owns all
-corpus mutations: crawling, extraction, snapshots, and indexing. Backend
-and MCP applications will be added only when they contain runnable code.
+- `apps/worker` owns all corpus mutations: crawling, extraction, snapshots,
+  and indexing.
+- `apps/backend` owns read-only retrieval and will later own grounded Q&A.
+- `packages/vespa` is the shared Vespa application and index contract.
 
 ## Crawl
 
