@@ -172,3 +172,12 @@ never rewrite history. -->
   until retrieval evaluation demonstrates the specific failure it addresses.
   Why: this is the smallest read path that exercises the real index, keeps
   failures attributable, and gives the future MCP a stable citation boundary.
+- D013 — Build grounded English answers with `mistral-small-2603`. Docstral
+  labels retrieved chunks `E1`, `E2`, and so on, then asks the model for a
+  structured answer containing the supporting labels. Docstral rejects unknown
+  labels and maps valid ones back to trusted chunk metadata to build
+  deduplicated page-level citations; the model never supplies citation URLs.
+  Return one fixed citation-free abstention when evidence is insufficient,
+  while operational and invalid-output failures remain explicit errors. Why:
+  citations must remain traceable to retrieved chunks and must not depend on
+  model-generated URLs.
