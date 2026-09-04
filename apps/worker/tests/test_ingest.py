@@ -243,7 +243,7 @@ def test_cli_does_not_eagerly_import_vespa() -> None:
             sys.executable,
             "-c",
             "import sys; import docstral_worker.cli; "
-            "assert 'docstral_worker.vespa_app' not in sys.modules",
+            "assert 'docstral_vespa' not in sys.modules",
         ],
         check=True,
     )
@@ -266,6 +266,7 @@ def test_make_ingest_rebuilds_local_vespa() -> None:
     )
     positions = [commands.index(step) for step in steps]
     assert positions == sorted(positions)
+    assert "--app-dir packages/vespa/src/docstral_vespa" in commands
 
 
 @pytest.mark.parametrize("endpoint", ["localhost:8080", "ftp://localhost:8080"])

@@ -1,4 +1,4 @@
-from docstral_worker.vespa_app import app
+from docstral_vespa import app
 from mistralai.search.toolkit.plugins.vespa.app.schemas.app import (
     FieldDefinition,
     IndexingMode,

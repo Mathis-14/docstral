@@ -5,7 +5,7 @@ VESPA_QUERY_PORT ?= 8080
 VESPA_CONFIG_PORT ?= 19071
 VESPA_ENDPOINT ?= http://localhost:$(VESPA_QUERY_PORT)
 VESPA_CONFIG_URL ?= http://localhost:$(VESPA_CONFIG_PORT)
-VESPA_APP_DIR := apps/worker/src/docstral_worker/vespa_app
+VESPA_APP_DIR := packages/vespa/src/docstral_vespa
 
 vespa-up:
 	uv run mistral-vespa local up --query-port $(VESPA_QUERY_PORT) --config-port $(VESPA_CONFIG_PORT) --name $(VESPA_CONTAINER)

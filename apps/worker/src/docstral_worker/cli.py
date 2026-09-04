@@ -144,7 +144,7 @@ def _run_ingest(config: IngestConfig) -> int:
             )
         except RuntimeError as exc:
             raise IngestionError(str(exc)) from exc
-        from docstral_worker.vespa_app import search_index
+        from docstral_vespa import search_index
 
         pipeline = build_pipeline(
             index=search_index(config.vespa_endpoint), embedder=embedder
