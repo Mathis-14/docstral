@@ -142,3 +142,16 @@ never rewrite history. -->
   only when a second application consumes it. Why: runtime names remain clear,
   ingestion does not become a catch-all, and shared code follows observed use;
   local execution remains the baseline until deployment work is undertaken.
+- D010 — Index the current raw snapshot as one Vespa document per chunk: pass
+  each full Markdown page to `MarkdownTokenTextSplitter` with `chunk_size=800`,
+  `chunk_max_size=800`, and no overlap; attach page title and content hash, use
+  the canonical URL as `source_id`, embed chunk content alone with the
+  1024-dimensional `mistral-embed`, and rank densely by closeness then cosine,
+  with lexical weights at zero. Continue after page-local ingestion errors, but
+  stop on splitter, embedding, or Vespa failure. The local `make ingest` entry
+  point rebuilds Vespa before each complete snapshot ingestion. Citations are
+  page-level for this baseline. Why: the current snapshot is the complete corpus,
+  while per-document upserts cannot remove a page absent from a later snapshot.
+  Measured on the current 331 convertible pages, the toolkit baseline produced
+  785 chunks with a 625-token median and only 13 chunks under 64 tokens; 15
+  exceeded its configured maximum, with an observed maximum of 850.

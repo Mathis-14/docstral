@@ -15,7 +15,7 @@ Set `MISTRAL_API_KEY` in `.env`.
 ## Architecture
 
 `apps/worker` is currently the only application. It runs locally and owns all
-corpus mutations: crawling, extraction, snapshots, and later indexing. Backend
+corpus mutations: crawling, extraction, snapshots, and indexing. Backend
 and MCP applications will be added only when they contain runnable code.
 
 ## Crawl
@@ -28,4 +28,12 @@ uv run docstral-worker crawl
 
 ```sh
 uv run docstral-worker extract
+```
+
+## Index
+
+Docker must be running.
+
+```sh
+make ingest
 ```
