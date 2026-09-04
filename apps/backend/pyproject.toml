@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docstral-backend"
+version = "0.1.0"
+description = "Read-only documentation retrieval for Docstral"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "docstral-vespa",
+    "mistralai-search-toolkit==0.0.13",
+    "pydantic",
+]
+
+[tool.uv.sources]
+docstral-vespa = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docstral_backend"]

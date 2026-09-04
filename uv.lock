@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "docstral",
+    "docstral-backend",
     "docstral-vespa",
     "docstral-worker",
 ]
@@ -494,6 +495,23 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+]
+
+[[package]]
+name = "docstral-backend"
+version = "0.1.0"
+source = { editable = "apps/backend" }
+dependencies = [
+    { name = "docstral-vespa" },
+    { name = "mistralai-search-toolkit" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "docstral-vespa", editable = "packages/vespa" },
+    { name = "mistralai-search-toolkit", specifier = "==0.0.13" },
+    { name = "pydantic" },
 ]
 
 [[package]]

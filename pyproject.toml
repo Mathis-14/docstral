@@ -33,6 +33,8 @@ ban-relative-imports = "all"
 python_version = "3.13"
 strict = true
 files = [
+    "apps/backend/src",
+    "apps/backend/tests",
     "apps/worker/src",
     "apps/worker/tests",
     "packages/vespa/src",
