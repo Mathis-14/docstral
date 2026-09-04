@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docstral-mcp"
+version = "0.1.0"
+description = "MCP server for Docstral"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "docstral-backend",
+    "fastmcp==4.0.2",
+    "pydantic",
+]
+
+[tool.uv.sources]
+docstral-backend = { workspace = true }
+
+[project.scripts]
+docstral-mcp = "docstral_mcp.serve:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docstral_mcp"]

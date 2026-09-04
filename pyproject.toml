@@ -35,6 +35,8 @@ strict = true
 files = [
     "apps/backend/src",
     "apps/backend/tests",
+    "apps/mcp/src",
+    "apps/mcp/tests",
     "apps/worker/src",
     "apps/worker/tests",
     "packages/vespa/src",

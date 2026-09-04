@@ -1,4 +1,4 @@
-.PHONY: vespa-up vespa-reset migrate crawl extract ingest check
+.PHONY: vespa-up vespa-reset migrate crawl extract ingest mcp check
 
 VESPA_CONTAINER ?= docstral-vespa
 VESPA_QUERY_PORT ?= 8080
@@ -28,6 +28,9 @@ ingest:
 	$(MAKE) vespa-up
 	$(MAKE) migrate
 	uv run --env-file .env docstral-worker ingest --vespa-endpoint $(VESPA_ENDPOINT)
+
+mcp:
+	uv run --env-file .env docstral-mcp --vespa-endpoint $(VESPA_ENDPOINT)
 
 check:
 	uv run ruff check .
