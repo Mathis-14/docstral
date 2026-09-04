@@ -155,3 +155,8 @@ never rewrite history. -->
   Measured on the current 331 convertible pages, the toolkit baseline produced
   785 chunks with a 625-token median and only 13 chunks under 64 tokens; 15
   exceeded its configured maximum, with an observed maximum of 850.
+- D011 — Keep the Vespa application definition, migrations, collection name,
+  and index constructor in the `packages/vespa` workspace package; isolate its
+  behavior-neutral extraction immediately before the backend retrieval PR.
+  Why: worker ingestion and backend retrieval need the same index contract,
+  while neither application should depend on the other or duplicate it.

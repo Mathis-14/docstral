@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "docstral",
+    "docstral-vespa",
     "docstral-worker",
 ]
 
@@ -496,14 +497,29 @@ dev = [
 ]
 
 [[package]]
+name = "docstral-vespa"
+version = "0.1.0"
+source = { editable = "packages/vespa" }
+dependencies = [
+    { name = "mistralai-search-toolkit" },
+    { name = "mistralai-search-toolkit-plugins-vespa" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mistralai-search-toolkit", specifier = "==0.0.13" },
+    { name = "mistralai-search-toolkit-plugins-vespa", specifier = "==0.0.13" },
+]
+
+[[package]]
 name = "docstral-worker"
 version = "0.1.0"
 source = { editable = "apps/worker" }
 dependencies = [
     { name = "beautifulsoup4" },
+    { name = "docstral-vespa" },
     { name = "httpx" },
     { name = "mistralai-search-toolkit", extra = ["html-converter-markdownify"] },
-    { name = "mistralai-search-toolkit-plugins-vespa" },
     { name = "protego" },
     { name = "pydantic" },
     { name = "structlog" },
@@ -512,9 +528,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4" },
+    { name = "docstral-vespa", editable = "packages/vespa" },
     { name = "httpx" },
     { name = "mistralai-search-toolkit", extras = ["html-converter-markdownify"], specifier = "==0.0.13" },
-    { name = "mistralai-search-toolkit-plugins-vespa", specifier = "==0.0.13" },
     { name = "protego" },
     { name = "pydantic" },
     { name = "structlog" },

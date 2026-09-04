@@ -32,7 +32,12 @@ ban-relative-imports = "all"
 [tool.mypy]
 python_version = "3.13"
 strict = true
-files = ["apps/worker/src", "apps/worker/tests"]
+files = [
+    "apps/worker/src",
+    "apps/worker/tests",
+    "packages/vespa/src",
+    "packages/vespa/tests",
+]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"
