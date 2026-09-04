@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "docstral-backend"
 version = "0.1.0"
-description = "Read-only documentation retrieval for Docstral"
+description = "Read-only documentation Q&A for Docstral"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "docstral-vespa",

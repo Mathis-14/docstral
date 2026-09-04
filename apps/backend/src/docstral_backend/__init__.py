@@ -1,5 +1,11 @@
-"""Read-only documentation retrieval for Docstral."""
+"""Read-only documentation Q&A for Docstral."""
 
+from docstral_backend.answering import (
+    AnsweringError,
+    AnswerResponse,
+    Citation,
+    DocumentationAnswerer,
+)
 from docstral_backend.retrieval import (
     DocumentationRetriever,
     RetrievalError,
@@ -10,6 +16,10 @@ from docstral_backend.retrieval import (
 )
 
 __all__ = [
+    "AnswerResponse",
+    "AnsweringError",
+    "Citation",
+    "DocumentationAnswerer",
     "DocumentationRetriever",
     "RetrievalError",
     "RetrievalRequest",
