@@ -4,6 +4,7 @@ import json
 from typing import Protocol, Self
 
 from mistralai.search.toolkit.llm.chat import ChatMessage, ChatParseResult
+from mistralai.search.toolkit.llm.mistral import MistralChat
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -17,6 +18,7 @@ from docstral_backend.retrieval import (
     RetrievalRequest,
     RetrievalResponse,
     RetrievedChunk,
+    build_documentation_retriever,
 )
 
 _ABSTENTION_MESSAGE = (
@@ -157,6 +159,17 @@ class DocumentationAnswerer:
             abstained=False,
             citations=_citations(draft.evidence_ids, retrieval.chunks),
         )
+
+
+def build_documentation_answerer(
+    *, vespa_endpoint: str, top_k: int
+) -> DocumentationAnswerer:
+    """Build the grounded answerer used by Docstral's serving process."""
+    return DocumentationAnswerer(
+        build_documentation_retriever(vespa_endpoint=vespa_endpoint),
+        MistralChat(),
+        top_k=top_k,
+    )
 
 
 def _question_with_evidence(question: str, chunks: tuple[RetrievedChunk, ...]) -> str:

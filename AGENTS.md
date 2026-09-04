@@ -181,3 +181,9 @@ never rewrite history. -->
   while operational and invalid-output failures remain explicit errors. Why:
   citations must remain traceable to retrieved chunks and must not depend on
   model-generated URLs.
+- D014 — Expose one read-only `ask_docs` tool through standalone FastMCP,
+  with typed schemas and stateless Streamable HTTP at `/mcp` (JSON responses).
+  Append server-built citation links to both text and `structured.answer`,
+  preserving `structured.citations`: Vibe may ignore text when structured
+  output exists. This baseline runs locally; authentication and public
+  deployment are deferred.
