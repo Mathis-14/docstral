@@ -1,16 +1,24 @@
 import argparse
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from math import isfinite
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import structlog
+from mistralai.search.toolkit.embedding import (
+    MODEL_1024_EMBEDDING,
+    MistralEmbedder,
+)
+from mistralai.search.toolkit.errors import SearchToolkitException
 from pydantic import BaseModel, ConfigDict, Field
 
 from docstral_worker import IngestionError
 from docstral_worker.crawl import MAX_PAGES, crawl
 from docstral_worker.extract import ExtractionError, extract_snapshot
 from docstral_worker.fetch import FetchConfig, HttpFetcher
+from docstral_worker.ingest import build_pipeline, ingest_snapshot
 from docstral_worker.sitemap import fetch_sitemap
 from docstral_worker.snapshot import (
     current_snapshot,
@@ -19,6 +27,7 @@ from docstral_worker.snapshot import (
 
 DEFAULT_SNAPSHOTS = Path("data/snapshots")
 DEFAULT_EXTRACTED = Path("data/extracted")
+DEFAULT_VESPA_ENDPOINT = "http://localhost:8080"
 
 
 class CrawlConfig(BaseModel):
@@ -36,6 +45,13 @@ class ExtractConfig(BaseModel):
     out: Path = DEFAULT_EXTRACTED
 
 
+class IngestConfig(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    snapshots: Path = DEFAULT_SNAPSHOTS
+    vespa_endpoint: str = DEFAULT_VESPA_ENDPOINT
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the Docstral worker command line interface."""
     args = _parser().parse_args(argv)
@@ -46,6 +62,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command == "extract":
         return _run_extract(ExtractConfig(snapshots=args.snapshots, out=args.out))
+    if args.command == "ingest":
+        return _run_ingest(
+            IngestConfig(
+                snapshots=args.snapshots,
+                vespa_endpoint=args.vespa_endpoint,
+            )
+        )
     raise AssertionError("argparse accepted an unknown command")
 
 
@@ -108,6 +131,42 @@ def _run_extract(config: ExtractConfig) -> int:
     return 1 if result.failed else 0
 
 
+def _run_ingest(config: IngestConfig) -> int:
+    logger = structlog.get_logger(__name__)
+    try:
+        snapshot = current_snapshot(config.snapshots)
+        if snapshot is None:
+            raise IngestionError(f"No current snapshot under {str(config.snapshots)!r}")
+        try:
+            embedder = MistralEmbedder(
+                model_name=MODEL_1024_EMBEDDING,
+                max_retry=6,
+            )
+        except RuntimeError as exc:
+            raise IngestionError(str(exc)) from exc
+        from docstral_worker.vespa_app import search_index
+
+        pipeline = build_pipeline(
+            index=search_index(config.vespa_endpoint), embedder=embedder
+        )
+        result = asyncio.run(ingest_snapshot(snapshot, pipeline))
+    except (IngestionError, SearchToolkitException) as exc:
+        logger.error(
+            "ingest_failed",
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+        return 1
+    logger.info(
+        "ingest_finished",
+        snapshot=snapshot.directory.name,
+        indexed=result.indexed,
+        failed=result.failed,
+        duration_seconds=round(result.duration_seconds, 3),
+    )
+    return 1 if result.failed else 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docstral-worker")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -142,6 +201,20 @@ def _parser() -> argparse.ArgumentParser:
     extract_parser.add_argument(
         "--out", type=Path, default=DEFAULT_EXTRACTED, help="extraction root"
     )
+    ingest_parser = commands.add_parser(
+        "ingest",
+        help="index the current raw snapshot in Vespa",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    ingest_parser.add_argument(
+        "--snapshots", type=Path, default=DEFAULT_SNAPSHOTS, help="snapshot root"
+    )
+    ingest_parser.add_argument(
+        "--vespa-endpoint",
+        type=_http_endpoint,
+        default=DEFAULT_VESPA_ENDPOINT,
+        help="Vespa query and document endpoint",
+    )
     return parser
 
 
@@ -157,6 +230,16 @@ def _page_limit(value: str) -> int:
     if not 1 <= parsed <= MAX_PAGES:
         raise argparse.ArgumentTypeError(f"must be between 1 and {MAX_PAGES}")
     return parsed
+
+
+def _http_endpoint(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an absolute HTTP(S) URL") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise argparse.ArgumentTypeError("must be an absolute HTTP(S) URL")
+    return value
 
 
 def _configure_logging() -> None:
