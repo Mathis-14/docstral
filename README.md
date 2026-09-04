@@ -16,7 +16,8 @@ Set `MISTRAL_API_KEY` in `.env`.
 
 - `apps/worker` owns all corpus mutations: crawling, extraction, snapshots,
   and indexing.
-- `apps/backend` owns read-only retrieval and will later own grounded Q&A.
+- `apps/backend` owns read-only retrieval and grounded Q&A.
+- `apps/mcp` exposes the backend through a thin FastMCP transport adapter.
 - `packages/vespa` is the shared Vespa application and index contract.
 
 ## Crawl
@@ -38,3 +39,25 @@ Docker must be running.
 ```sh
 make ingest
 ```
+
+## MCP
+
+Vespa must be running with an indexed corpus.
+
+```sh
+make mcp
+```
+
+The FastMCP Streamable HTTP endpoint is `http://127.0.0.1:8000/mcp`.
+
+Connect it to Vibe:
+
+```sh
+vibe mcp add docstral \
+  --url http://127.0.0.1:8000/mcp \
+  --transport streamable-http \
+  --header X-Docstral-Client=vibe
+```
+
+The non-secret header selects Vibe's static connection mode; this local baseline
+does not enforce authentication.
