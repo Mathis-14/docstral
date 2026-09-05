@@ -61,3 +61,9 @@ vibe mcp add docstral \
 
 The non-secret header selects Vibe's static connection mode; this local baseline
 does not enforce authentication.
+
+## Retrieval evaluation
+
+The [evaluation report](evals/README.md) documents the reviewed dataset, retained
+and deferred metrics, dense/hybrid results, and the local reproduction command.
+It measures retrieved evidence, not generated-answer quality.

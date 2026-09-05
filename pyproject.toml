@@ -33,6 +33,7 @@ ban-relative-imports = "all"
 python_version = "3.13"
 strict = true
 files = [
+    "evals",
     "apps/backend/src",
     "apps/backend/tests",
     "apps/mcp/src",

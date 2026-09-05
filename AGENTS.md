@@ -187,3 +187,19 @@ never rewrite history. -->
   preserving `structured.citations`: Vibe may ignore text when structured
   output exists. This baseline runs locally; authentication and public
   deployment are deferred.
+- D015 — The first retrieval evaluation retained the existing dense ranking
+  at K=5. Why: both tested hybrid configurations reduced evidence recall,
+  all-required coverage, and MRR at K=5; the weaker lexical configuration
+  improved coverage at K=10 but still had lower MRR. The September 2026 English
+  development set measured macro/micro evidence-group recall, all-required,
+  RR/MRR, source hit, and duplicate-source rate at K=1/3/5/10. Matching used
+  source identity, content hash, and exact annotated passages within the actual
+  top-K chunks, with duplicate sources and original ranks preserved. Passage
+  alternatives satisfied a group with OR semantics; all distinct groups were
+  required for complete coverage. This distinguished useful evidence from a
+  correct page containing the wrong passage. Negative questions remained
+  qualitative diagnostics, with no validated rejection threshold. These are
+  development results, not an unseen holdout or a general rejection of hybrid
+  search. Reranking quality, chunk enrichment, and a consolidated evaluation of
+  the Q&A path remain unmeasured. Method, run history, and limitations are in
+  [evals/README.md](evals/README.md).
