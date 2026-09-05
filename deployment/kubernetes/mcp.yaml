@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mcp-auth
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard-rwo
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: mcp
+  ports:
+    - name: http
+      port: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp
+spec:
+  # Only a successful publication or guarded deployment may resume serving.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mcp
+  template:
+    metadata:
+      labels:
+        app: mcp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: docstral-mcp:release
+          args: [--auth, google, --vespa-endpoint, "http://vespa:8080"]
+          envFrom:
+            - secretRef: {name: mcp-google}
+          env:
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef: {name: mistral, key: MISTRAL_API_KEY}
+            - name: DOCSTRAL_OAUTH_BASE_URL
+              valueFrom:
+                configMapKeyRef: {name: runtime, key: DOCSTRAL_OAUTH_BASE_URL}
+            - {name: FASTMCP_HOME, value: /app/auth}
+          ports:
+            - {name: http, containerPort: 8000}
+          startupProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: {port: http}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: auth, mountPath: /app/auth}
+      volumes:
+        - name: auth
+          persistentVolumeClaim:
+            claimName: mcp-auth
