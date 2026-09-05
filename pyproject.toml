@@ -10,6 +10,7 @@ dev = [
     "pre-commit",
     "pytest",
     "pytest-asyncio",
+    "pyyaml",
     "ruff",
 ]
 
@@ -34,6 +35,7 @@ plugins = ["pydantic.mypy"]
 python_version = "3.13"
 strict = true
 files = [
+    "deployment/tests",
     "evals",
     "apps/backend/src",
     "apps/backend/tests",

@@ -1,0 +1,177 @@
+name: Deploy to GKE
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Stable release vX.Y.Z (empty selects latest)
+        type: string
+      bootstrap:
+        description: First deployment only; requires an empty runtime namespace
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-docstral
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/docstral
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve the release commit
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+          GKE_CLUSTER: ${{ vars.GKE_CLUSTER }}
+          GKE_LOCATION: ${{ vars.GKE_LOCATION }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          : "${GCP_PROJECT_ID:?Set GCP_PROJECT_ID}"
+          : "${GCP_REGION:?Set GCP_REGION}"
+          : "${GKE_CLUSTER:?Set GKE_CLUSTER}"
+          : "${GKE_LOCATION:?Set GKE_LOCATION}"
+          : "${GCP_DEPLOY_SERVICE_ACCOUNT:?Set GCP_DEPLOY_SERVICE_ACCOUNT}"
+          : "${GCP_WORKLOAD_IDENTITY_PROVIDER:?Set GCP_WORKLOAD_IDENTITY_PROVIDER}"
+          endpoint="repos/$GITHUB_REPOSITORY/releases/latest"
+          if [[ -n "$RELEASE" ]]; then
+            [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            endpoint="repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE"
+          fi
+          gh api "$endpoint" > "$RUNNER_TEMP/release.json"
+          jq -e '.draft == false and .prerelease == false' "$RUNNER_TEMP/release.json"
+          tag=$(jq -er '.tag_name' "$RUNNER_TEMP/release.json")
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          revision=$(git rev-parse "refs/tags/$tag^{commit}")
+          git merge-base --is-ancestor "$revision" origin/main
+          printf 'tag=%s\nrevision=%s\n' "$tag" "$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ steps.release.outputs.revision }}
+          persist-credentials: false
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          token_format: access_token
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Verify both immutable images
+        id: images
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          REVISION: ${{ steps.release.outputs.revision }}
+        run: |
+          for service in worker mcp; do
+            url="https://artifactregistry.googleapis.com/v1/projects/$GCP_PROJECT_ID/locations/$GCP_REGION/repositories/docstral/packages/$service/tags/$TAG"
+            digest=$(curl --fail --silent --show-error --max-time 30 \
+              --header "Authorization: Bearer $ACCESS_TOKEN" "$url" | jq -er '.version | split("/") | last')
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
+            image="$REGISTRY/$service@$digest"
+            docker pull "$image"
+            actual=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")
+            [[ "$actual" == "$REVISION" ]] || {
+              echo "::error::$service image does not match the release commit"; exit 1;
+            }
+            printf '%s=%s\n' "$service" "$image" >> "$GITHUB_OUTPUT"
+            printf '%s: %s\n\n' "$service" "$image" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          cluster_name: ${{ vars.GKE_CLUSTER }}
+          location: ${{ vars.GKE_LOCATION }}
+      - name: Preflight and acquire maintenance
+        env:
+          BOOTSTRAP: ${{ inputs.bootstrap }}
+        run: |
+          kubectl -n docstral get secret mistral mcp-google -o name
+          kubectl -n docstral get configmap runtime -o name
+          kubectl -n docstral get jobs -o json | jq -e '
+            [.items[] | select(.metadata.name | startswith("vespa-migrate-"))
+              | select(any(.status.conditions[]?; .status == "True" and (.type == "Complete" or .type == "Failed")) | not)] | length == 0'
+          if [[ "$BOOTSTRAP" == true ]]; then
+            kubectl -n docstral get deployment,statefulset,pvc -o json | jq -e '.items | length == 0'
+          else
+            kubectl -n docstral exec deployment/worker -- \
+              docstral-worker maintenance on --data-dir /app/data --timeout 120
+          fi
+      - name: Render immutable images and stop the application runtimes
+        env:
+          WORKER_IMAGE: ${{ steps.images.outputs.worker }}
+          MCP_IMAGE: ${{ steps.images.outputs.mcp }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/migration"
+          for target in runtime migration; do
+            resource="$GITHUB_WORKSPACE/deployment/kubernetes"
+            if [[ "$target" == migration ]]; then resource="$resource/migration"; fi
+            cp -R "$resource" "$RUNNER_TEMP/$target/base"
+            printf 'resources:\n  - base\nimages:\n  - name: docstral-worker\n    newName: %s\n    digest: %s\n  - name: docstral-mcp\n    newName: %s\n    digest: %s\n' \
+              "${WORKER_IMAGE%@*}" "${WORKER_IMAGE#*@}" \
+              "${MCP_IMAGE%@*}" "${MCP_IMAGE#*@}" > "$RUNNER_TEMP/$target/kustomization.yaml"
+          done
+          printf 'nameSuffix: -%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$RUNNER_TEMP/migration/kustomization.yaml"
+          kubectl kustomize "$RUNNER_TEMP/runtime" > "$RUNNER_TEMP/runtime.yaml"
+          kubectl kustomize "$RUNNER_TEMP/migration" > "$RUNNER_TEMP/migration.yaml"
+          kubectl apply --dry-run=server -f "$RUNNER_TEMP/runtime.yaml"
+          deployments=$(kubectl -n docstral get deployment worker mcp --ignore-not-found -o name)
+          if [[ -n "$deployments" ]]; then
+            kubectl -n docstral scale deployment/worker deployment/mcp --replicas=0
+          fi
+          pods=$(kubectl -n docstral get pods -l 'app in (worker,mcp)' -o name)
+          if [[ -n "$pods" ]]; then
+            kubectl -n docstral wait --for=delete pods -l 'app in (worker,mcp)' --timeout=180s
+          fi
+          kubectl apply -f "$RUNNER_TEMP/runtime.yaml"
+      - name: Migrate Vespa before starting the worker
+        run: |
+          kubectl -n docstral wait --for=create pod/vespa-0 --timeout=300s
+          kubectl -n docstral wait --for=jsonpath='{.status.containerStatuses[0].started}'=true pod/vespa-0 --timeout=600s
+          job=$(kubectl create -f "$RUNNER_TEMP/migration.yaml" -o name)
+          kubectl -n docstral wait --for=condition=complete "$job" --timeout=660s
+          kubectl -n docstral rollout status statefulset/vespa --timeout=300s
+          kubectl -n docstral scale deployment/worker --replicas=1
+          kubectl -n docstral rollout status deployment/worker --timeout=300s
+      - name: Restore serving only for a published corpus
+        run: |
+          published=$(kubectl -n docstral exec deployment/worker -- sh -ec 'if test -f /app/data/.published-snapshot; then echo yes; else echo no; fi')
+          if [[ "$published" == yes ]]; then
+            kubectl -n docstral scale deployment/mcp --replicas=1
+            kubectl -n docstral rollout status deployment/mcp --timeout=300s
+          fi
+          kubectl -n docstral exec deployment/worker -- docstral-worker maintenance off --data-dir /app/data
+          printf 'Published corpus: %s. No ingestion or schedule was triggered.\n' "$published" >> "$GITHUB_STEP_SUMMARY"
+      - name: Report failure without releasing maintenance
+        if: failure()
+        run: |
+          echo 'Deployment failed. Inspect the failed step and migration Job; repair before releasing maintenance.' >> "$GITHUB_STEP_SUMMARY"

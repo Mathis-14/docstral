@@ -24,6 +24,16 @@ jobs:
       - name: Validate GitHub workflows
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
 
+      - name: Validate Kubernetes manifests
+        run: |
+          kubectl kustomize deployment/kubernetes > "$RUNNER_TEMP/runtime.yaml"
+          kubectl kustomize deployment/kubernetes/migration > "$RUNNER_TEMP/migration.yaml"
+          cp deployment/kubernetes/namespace.yaml "$RUNNER_TEMP/namespace.yaml"
+          docker run --rm -v "$RUNNER_TEMP:/manifests:ro" \
+            ghcr.io/yannh/kubeconform@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c \
+            -strict -summary -kubernetes-version 1.35.0 \
+            /manifests/runtime.yaml /manifests/migration.yaml /manifests/namespace.yaml
+
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
