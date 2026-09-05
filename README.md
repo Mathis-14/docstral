@@ -87,6 +87,10 @@ Both images run as UID/GID 1000. Mount worker data at `/app/data`, writable by
 that user; images contain neither snapshots nor secrets. Run `make ingest` on
 the host: these images do not manage Vespa.
 
+For the cluster-only replacement command, see the
+[worker publication guide](apps/worker/README.md). Cluster provisioning remains
+a separate step; local `make ingest` is unchanged.
+
 ## Retrieval evaluation
 
 The [evaluation report](evals/README.md) documents the reviewed dataset, retained
