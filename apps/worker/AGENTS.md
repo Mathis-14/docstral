@@ -11,6 +11,7 @@
 - Extract: `uv run docstral-worker extract`
 - Ingest: `make ingest`
 - Cluster publication and maintenance: see [README.md](README.md).
+- Mistral Workflows polling worker: `docstral-worker workflows` (cluster configuration required).
 
 ## Rules
 
@@ -43,3 +44,7 @@
   deployment maintenance may not bypass it.
 - Retention runs only through the cluster publication path. Preserve current
   and published snapshots, unrecognised directories, and symlink targets.
+- The native Mistral Workflows activity reuses crawl and publication under one
+  volume lock. Keep all I/O in the activity; the workflow itself is deterministic.
+  Never create a schedule on worker startup or retry the whole rebuild implicitly.
+  Workflow inputs cannot select cluster endpoints, paths, or credentials.
