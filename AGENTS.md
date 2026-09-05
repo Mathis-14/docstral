@@ -237,3 +237,14 @@ never rewrite history. -->
   mode to avoid recording callback codes. Authentication stays in `apps/mcp`.
   Public access, rate limits and spending quotas require a later decision and
   PR; invitations are not a cost cap.
+- D019 — Run ingestion through a native Mistral Workflows polling worker with
+  one `docstral-refresh` workflow whose activity crawls then publishes under the
+  existing volume lock. Why: Mistral hosts scheduling and execution history while corpus
+  operations stay inside the cluster, without a public mutation endpoint or a
+  second scheduler. Keep configuration in the worker environment and return
+  only indexing totals; failed crawls cannot publish the previous snapshot.
+  Use one activity attempt, preserving dependency-level retries and D017 partial
+  results, and enforce the SDK's strict trace redaction at CLI startup. Worker
+  startup never creates or activates a schedule; scheduling is an explicit
+  operator operation after deployment verification, hourly with overlap `SKIP`
+  and `pause_on_failure=True` until manual recovery and resumption.

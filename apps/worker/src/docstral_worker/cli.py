@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import os
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from math import isfinite
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,18 +15,14 @@ from mistralai.search.toolkit.embedding import (
     MistralEmbedder,
 )
 from mistralai.search.toolkit.errors import SearchToolkitException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from docstral_worker import IngestionError
-from docstral_worker.crawl import MAX_PAGES, crawl
+from docstral_worker.crawl import MAX_PAGES
+from docstral_worker.crawl_run import CrawlConfig, crawl_snapshot
 from docstral_worker.extract import ExtractionError, extract_snapshot
-from docstral_worker.fetch import FetchConfig, HttpFetcher
 from docstral_worker.ingest import build_pipeline, ingest_snapshot
-from docstral_worker.sitemap import fetch_sitemap
-from docstral_worker.snapshot import (
-    current_snapshot,
-    write_snapshot,
-)
+from docstral_worker.snapshot import current_snapshot
 
 if TYPE_CHECKING:
     from docstral_worker.publish import PublishConfig
@@ -35,14 +30,6 @@ if TYPE_CHECKING:
 DEFAULT_SNAPSHOTS = Path("data/snapshots")
 DEFAULT_EXTRACTED = Path("data/extracted")
 DEFAULT_VESPA_ENDPOINT = "http://localhost:8080"
-
-
-class CrawlConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    out: Path = DEFAULT_SNAPSHOTS
-    delay: float = Field(default=0.25, ge=0.0, allow_inf_nan=False)
-    max_pages: int = Field(default=MAX_PAGES, ge=1, le=MAX_PAGES)
 
 
 class ExtractConfig(BaseModel):
@@ -64,6 +51,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     _configure_logging()
+    if args.command == "workflows":
+        os.environ.setdefault("LOG_FORMAT", "json")
+        # SDK settings load on import; its default trace filter can expose errors.
+        os.environ["OTEL_REDACTION"] = "strict"
+        from docstral_worker.workflows import run_worker
+
+        _configure_logging()
+        try:
+            asyncio.run(run_worker())
+        except ValidationError as exc:
+            parser.error(str(exc.errors(include_input=False, include_url=False)))
+        except IngestionError as exc:
+            structlog.get_logger(__name__).error(
+                "workflows_failed", error_message=str(exc)
+            )
+            return 1
+        return 0
     if args.command == "crawl":
         return _run_crawl(
             CrawlConfig(out=args.out, delay=args.delay, max_pages=args.max_pages)
@@ -112,17 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _run_crawl(config: CrawlConfig) -> int:
     logger = structlog.get_logger(__name__)
     try:
-        cache = current_snapshot(config.out)
-        with HttpFetcher(FetchConfig(delay_seconds=config.delay)) as fetcher:
-            sitemap = fetch_sitemap(fetcher)
-            crawled_at = datetime.now(UTC)
-            result = crawl(
-                fetcher,
-                sitemap,
-                cache,
-                max_pages=config.max_pages,
-            )
-        destination = write_snapshot(config.out, crawled_at, sitemap, result)
+        result = crawl_snapshot(config)
     except IngestionError as exc:
         logger.error(
             "crawl_failed",
@@ -130,13 +124,6 @@ def _run_crawl(config: CrawlConfig) -> int:
             error_message=str(exc),
         )
         return 1
-    logger.info(
-        "crawl_finished",
-        snapshot=str(destination),
-        complete=result.complete,
-        stored=result.counts.stored,
-        failed=result.counts.failed,
-    )
     return 0 if result.complete else 1
 
 
@@ -229,6 +216,7 @@ def _run_publish(config: PublishConfig) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docstral-worker")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("workflows", help="run the Mistral Workflows ingestion worker")
     crawl_parser = commands.add_parser(
         "crawl",
         help="crawl documentation into a raw snapshot",
@@ -330,6 +318,7 @@ def _http_endpoint(value: str) -> str:
 
 
 def _configure_logging() -> None:
+    structlog.reset_defaults()
     structlog.configure(
         processors=[
             structlog.processors.TimeStamper(fmt="iso", utc=True),

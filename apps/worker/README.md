@@ -86,11 +86,43 @@ survives replacement of the worker pod. Both commands refuse an incomplete
 index: repair publication first. Never delete the lock file to bypass a run.
 Maintenance only blocks new publications; it does not stop MCP.
 
+## Mistral Workflows worker
+
+With the cluster prerequisites above and `DEPLOYMENT_NAME` set:
+
+```sh
+docstral-worker workflows
+```
+
+This registers `docstral-refresh` and polls Mistral for executions over an
+outbound connection. No public worker endpoint is needed. Start a manual
+execution with input `{}` in [AI Studio](https://console.mistral.ai/).
+The activity crawls fresh documentation and calls the existing publication
+pipeline under one lock. An incomplete crawl never republishes an old snapshot.
+Crawl failures leave the old index available. A failed rebuild leaves MCP
+stopped until repair with `publish`; there is no automatic rollback.
+The CLI enforces the SDK's strict trace redaction before importing Workflows.
+
+The output contains `indexed`, `failed`, and `duration_seconds` (indexing time).
+Page-local failures remain explicit partial results; dependency failures fail
+the execution. The activity has one attempt: it does not automatically repeat
+the full rebuild. Cancellation waits for a running synchronous crawl to finish
+before releasing its lock, and never starts publication afterwards.
+
+Starting this process does **not** create or activate a schedule. Mistral
+[schedules](https://docs.mistral.ai/studio/workflows/building-workflows/scheduling)
+are configured separately; hourly execution uses interval `PT1H` and overlap
+policy `SKIP`, with `pause_on_failure=True`. A failed execution pauses future
+runs until manual recovery and resumption; page-local partial results do not.
+Validate one manual execution on the deployed worker before enabling the schedule.
+Monitor executions and schedule state in AI Studio; email alerts are not configured.
+
 ## Verification
 
 ```sh
 uv run pytest apps/worker/tests/test_publish.py apps/worker/tests/test_maintenance.py \
-  apps/worker/tests/test_kubernetes.py apps/worker/tests/test_retention.py
+  apps/worker/tests/test_kubernetes.py apps/worker/tests/test_retention.py \
+  apps/worker/tests/test_refresh.py apps/worker/tests/test_workflows.py
 ```
 
 Tests run with simulated external services, not against a live cluster.
