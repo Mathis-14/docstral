@@ -96,7 +96,7 @@ uv run --env-file .env docker run --rm --platform linux/amd64 \
 This serves `/mcp` without authentication. Images run as UID/GID 1000 and contain
 no corpus or secrets. Mount worker data at `/app/data`; run local ingestion on
 the host. See [cluster publication](apps/worker/README.md) and
-[image CI](deployment/README.md). Cluster provisioning is separate.
+[deployment](deployment/README.md). Cluster provisioning is separate.
 
 ## Retrieval evaluation
 
