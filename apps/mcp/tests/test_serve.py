@@ -67,4 +67,5 @@ def test_command_runs_fastmcp_with_http_contract(
         "port": 9000,
         "stateless_http": True,
         "transport": "http",
+        "uvicorn_config": {"access_log": True},
     }
