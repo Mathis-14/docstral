@@ -91,6 +91,9 @@ For the cluster-only replacement command, see the
 [worker publication guide](apps/worker/README.md). Cluster provisioning remains
 a separate step; local `make ingest` is unchanged.
 
+For GitHub image builds and registry configuration, see the
+[runtime image CI guide](deployment/README.md).
+
 ## Retrieval evaluation
 
 The [evaluation report](evals/README.md) documents the reviewed dataset, retained

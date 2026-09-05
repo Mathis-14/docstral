@@ -1,0 +1,180 @@
+name: worker image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/worker/**"
+      - "packages/vespa/**"
+      - "apps/*/pyproject.toml"
+      - "packages/*/pyproject.toml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+      - "deployment/docker/worker.Dockerfile"
+      - ".github/workflows/checks.yml"
+      - ".github/workflows/image-worker.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/worker/**"
+      - "packages/vespa/**"
+      - "apps/*/pyproject.toml"
+      - "packages/*/pyproject.toml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+      - "deployment/docker/worker.Dockerfile"
+      - ".github/workflows/checks.yml"
+      - ".github/workflows/image-worker.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: image-worker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  build:
+    if: github.event_name == 'pull_request'
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deployment/docker/worker.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: docstral-worker:ci
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - name: Smoke test without external services
+        run: |
+          docker run --rm --network none docstral-worker:ci --help
+          docker run --rm --network none --entrypoint python docstral-worker:ci \
+            -c 'import os; import docstral_worker.publish; import docstral_vespa; assert os.getuid() == 1000'
+
+  publish:
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/docstral/worker
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate publication
+        id: version
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_BUILD_SERVICE_ACCOUNT: ${{ vars.GCP_BUILD_SERVICE_ACCOUNT }}
+        run: |
+          : "${GCP_PROJECT_ID:?Set the GCP_PROJECT_ID repository variable}"
+          : "${GCP_REGION:?Set the GCP_REGION repository variable}"
+          : "${GCP_WORKLOAD_IDENTITY_PROVIDER:?Set the GCP_WORKLOAD_IDENTITY_PROVIDER repository variable}"
+          : "${GCP_BUILD_SERVICE_ACCOUNT:?Set the GCP_BUILD_SERVICE_ACCOUNT repository variable}"
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then
+            jq -e '.release.draft == false and .release.prerelease == false' "$GITHUB_EVENT_PATH" || {
+              echo "::error::Only published stable releases can publish images"; exit 1;
+            }
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+              echo "::error::Release tags must match vX.Y.Z"; exit 1;
+            }
+            [[ "$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")" == "$GITHUB_SHA" ]] || {
+              echo "::error::Release tag no longer points to the event commit"; exit 1;
+            }
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+              echo "::error::Release commit must belong to main"; exit 1;
+            }
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: deployment/docker/worker.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: docstral-worker:ci
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+      - name: Smoke test without external services
+        run: |
+          docker run --rm --network none docstral-worker:ci --help
+          docker run --rm --network none --entrypoint python docstral-worker:ci \
+            -c 'import os; import docstral_worker.publish; import docstral_vespa; assert os.getuid() == 1000'
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_BUILD_SERVICE_ACCOUNT }}
+          token_format: access_token
+          create_credentials_file: false
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ vars.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Publish or verify the immutable tag
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          IMAGE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          tag_url="https://artifactregistry.googleapis.com/v1/projects/$GCP_PROJECT_ID/locations/$GCP_REGION/repositories/docstral/packages/worker/tags/$IMAGE_TAG"
+          tag_file="$RUNNER_TEMP/worker-tag.json"
+          status=$(curl --silent --show-error --max-time 30 --output "$tag_file" \
+            --write-out '%{http_code}' --header "Authorization: Bearer $ACCESS_TOKEN" "$tag_url")
+          case "$status" in
+            200) ;;
+            404)
+              docker tag docstral-worker:ci "$IMAGE:$IMAGE_TAG"
+              docker push "$IMAGE:$IMAGE_TAG"
+              curl --fail --silent --show-error --max-time 30 --output "$tag_file" \
+                --header "Authorization: Bearer $ACCESS_TOKEN" "$tag_url"
+              ;;
+            *)
+              echo "::error::Artifact Registry tag lookup failed: HTTP $status"
+              exit 1
+              ;;
+          esac
+          digest=$(jq -er '.version | split("/") | last' "$tag_file")
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || {
+            echo "::error::Artifact Registry returned an invalid digest"; exit 1;
+          }
+          docker pull "$IMAGE@$digest"
+          revision=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE@$digest")
+          [[ "$revision" == "$GITHUB_SHA" ]] || {
+            echo "::error::Existing image tag belongs to a different commit"; exit 1;
+          }
+          printf 'Service: worker\n\nCommit: %s\n\nTag: %s\n\nImage: %s@%s\n' \
+            "$GITHUB_SHA" "$IMAGE_TAG" "$IMAGE" "$digest" >> "$GITHUB_STEP_SUMMARY"
