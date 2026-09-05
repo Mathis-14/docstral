@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from docstral_worker import IngestionError
 
@@ -22,8 +22,18 @@ class _DeploymentMetadata(_Metadata):
     generation: int
 
 
-class _ScaleSpec(_Object):
+class _DeploymentSpec(_Object):
     replicas: Literal[0, 1]
+
+
+class _ScaleSpec(_DeploymentSpec):
+    replicas: Literal[0, 1] = 0
+
+    @field_validator("replicas", mode="before")
+    @classmethod
+    def _default_zero(cls, value: object) -> object:
+        # /scale omits zero replicas; the Kubernetes SDK represents that as None.
+        return 0 if value is None else value
 
 
 class _ScaleStatus(_Object):
@@ -42,7 +52,7 @@ class _DeploymentStatus(_Object):
 
 class _Deployment(_Object):
     metadata: _DeploymentMetadata
-    spec: _ScaleSpec
+    spec: _DeploymentSpec
     status: _DeploymentStatus
 
 

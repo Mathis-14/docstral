@@ -45,7 +45,9 @@ for trusted publication events, with builder writes limited to that repository.
 No JSON service account key is required. Use a separate deployer identity with
 registry read, GKE cluster discovery and namespace-scoped Kubernetes deployment
 permissions (including RBAC and pod exec). Restrict its WIF binding to this
-repository's protected `production` environment; require approval and `main`.
+repository's `production` environment and manual `deploy.yml` runs on `main`.
+Match GitHub's actual OIDC subject, including immutable owner/repository IDs.
+Launching **Run workflow** is the deployment approval; no second review is required.
 
 Set these GitHub Actions repository variables:
 
@@ -59,9 +61,14 @@ Set these GitHub Actions repository variables:
 | `GKE_CLUSTER` | Cluster name |
 | `GKE_LOCATION` | Cluster zone |
 
+Override `GCP_WORKLOAD_IDENTITY_PROVIDER` in the `production` environment with
+a separate deployment pool; keep the repository-level provider for image builds.
+
 Before deploying, create namespace `docstral` using `kubernetes/namespace.yaml`,
-then provision these objects there. Keep secret files outside Git and never
-paste secret values into command arguments or logs.
+then apply `kubernetes/worker-rbac.yaml` there as the cluster operator. This
+prepares the first server-side dry-run without granting the deployer `bind`
+or `escalate`. Provision the objects below; keep secret files outside Git and
+never paste secret values into command arguments or logs.
 
 | Object | Required keys |
 | --- | --- |
@@ -109,8 +116,9 @@ Inspect the failed Actions step and `kubectl -n docstral logs job/<job-name>`.
 Do not delete volumes or publication markers. If the worker was stopped, fix
 its configuration/image and scale it to one replica before retrying deployment.
 An incomplete publication must be repaired through the worker's `publish`
-command; maintenance refuses to hide it. After a deployment failure, retry the
-deployment with `bootstrap` unchecked; maintenance is released only on success.
+command; maintenance refuses to hide it. Keep `bootstrap` checked only if no
+runtime resources or PVCs were created; otherwise uncheck it on retry.
+Maintenance is released only on success.
 
 Public HTTPS, rate limiting, backups and availability beyond one node remain
 separate work. Reference: [Vespa persistence](https://docs.vespa.ai/en/operations/self-managed/docker-containers.html),
