@@ -623,14 +623,16 @@ source = { editable = "apps/mcp" }
 dependencies = [
     { name = "docstral-backend" },
     { name = "fastmcp" },
-    { name = "pydantic" },
+    { name = "pydantic", extra = ["email"] },
+    { name = "pydantic-settings" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "docstral-backend", editable = "apps/backend" },
     { name = "fastmcp", specifier = "==4.0.2" },
-    { name = "pydantic" },
+    { name = "pydantic", extras = ["email"] },
+    { name = "pydantic-settings" },
 ]
 
 [[package]]

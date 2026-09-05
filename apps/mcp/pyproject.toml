@@ -10,7 +10,8 @@ requires-python = ">=3.13,<3.15"
 dependencies = [
     "docstral-backend",
     "fastmcp==4.0.2",
-    "pydantic",
+    "pydantic[email]",
+    "pydantic-settings",
 ]
 
 [tool.uv.sources]

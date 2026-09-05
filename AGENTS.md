@@ -226,3 +226,14 @@ never rewrite history. -->
   also protecting `current` and the published snapshot; never follow symlinks
   during cleanup. This is a cluster-only path using in-cluster credentials:
   local `make ingest` and Mac snapshot retention remain unchanged.
+- D018 — Protect the MCP with FastMCP's native Google OAuth provider when
+  explicitly launched with `--auth google`; permit tool access only for verified
+  Google emails in `DOCSTRAL_ALLOWED_EMAILS`. Why: the autonomous Q&A assessment
+  needs authenticated remote access without changing its answering contract,
+  while invitations contain initial exposure of owner-funded API calls. Keep
+  local `--auth none` available; invalid Google configuration must fail rather
+  than downgrade. Use native encrypted file storage under `FASTMCP_HOME` with
+  a stable signing key and one replica; suppress HTTP access logs in Google
+  mode to avoid recording callback codes. Authentication stays in `apps/mcp`.
+  Public access, rate limits and spending quotas require a later decision and
+  PR; invitations are not a cost cap.

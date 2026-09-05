@@ -30,6 +30,7 @@ select = ["F", "I", "ANN", "B", "UP", "TID", "RUF"]
 ban-relative-imports = "all"
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 python_version = "3.13"
 strict = true
 files = [
@@ -48,3 +49,6 @@ files = [
 addopts = "-m 'not integration'"
 asyncio_mode = "auto"
 markers = ["integration: requires external services"]
+
+[tool.pydantic-mypy]
+init_typed = true
