@@ -212,3 +212,17 @@ never rewrite history. -->
   does not add authentication or change the ingestion and answering behavior.
   Dockerfiles live in `deployment/docker/`; GitHub CI/CD workflows belong in
   `.github/workflows/`.
+- D017 — Publish the cluster corpus through the worker's `publish` command:
+  hold one volume-backed lock, verify the complete snapshot and raw hashes,
+  stop the single-replica MCP Deployment and wait for its pods to terminate,
+  then clear only `docs` through the toolkit's public client and reuse the
+  existing ingestion pipeline. Resume MCP only after a completed run with at
+  least one indexed page; page-local failures remain explicit partial results.
+  Why: absent pages must disappear without serving a partially rebuilt index
+  or destroying Vespa's container or disk. A persistent pending marker blocks
+  deployment maintenance after an interrupted rebuild; retrying publication
+  repairs it. Maintenance shares the lock and survives worker replacement.
+  After publication, retain two complete snapshots and one failed snapshot,
+  also protecting `current` and the published snapshot; never follow symlinks
+  during cleanup. This is a cluster-only path using in-cluster credentials:
+  local `make ingest` and Mac snapshot retention remain unchanged.

@@ -10,6 +10,7 @@
 - Crawl: `uv run docstral-worker crawl`
 - Extract: `uv run docstral-worker extract`
 - Ingest: `make ingest`
+- Cluster publication and maintenance: see [README.md](README.md).
 
 ## Rules
 
@@ -33,3 +34,12 @@
   citations at canonical-page URL granularity.
 - Keep `mistral-embed` and the Vespa schema explicitly aligned at 1024
   dimensions.
+- Cluster corpus replacement goes through `publish`, never `make ingest`.
+  Use the official Kubernetes SDK with in-cluster credentials only; do not
+  load an operator's kubeconfig or expose administration through MCP.
+- Publication and deployment maintenance share the worker volume lock.
+  Stop MCP before clearing `docs`, and keep it stopped after an incomplete
+  rebuild. A repair publication may proceed while the pending marker exists;
+  deployment maintenance may not bypass it.
+- Retention runs only through the cluster publication path. Preserve current
+  and published snapshots, unrecognised directories, and symlink targets.

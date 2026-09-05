@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import argparse
 import asyncio
+import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from math import isfinite
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import structlog
@@ -12,7 +16,7 @@ from mistralai.search.toolkit.embedding import (
     MistralEmbedder,
 )
 from mistralai.search.toolkit.errors import SearchToolkitException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from docstral_worker import IngestionError
 from docstral_worker.crawl import MAX_PAGES, crawl
@@ -24,6 +28,9 @@ from docstral_worker.snapshot import (
     current_snapshot,
     write_snapshot,
 )
+
+if TYPE_CHECKING:
+    from docstral_worker.publish import PublishConfig
 
 DEFAULT_SNAPSHOTS = Path("data/snapshots")
 DEFAULT_EXTRACTED = Path("data/extracted")
@@ -54,7 +61,8 @@ class IngestConfig(BaseModel):
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the Docstral worker command line interface."""
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
     _configure_logging()
     if args.command == "crawl":
         return _run_crawl(
@@ -69,6 +77,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                 vespa_endpoint=args.vespa_endpoint,
             )
         )
+    if args.command == "publish":
+        from docstral_worker.publish import PublishConfig
+
+        try:
+            config = PublishConfig(
+                data_dir=args.data_dir,
+                vespa_endpoint=args.vespa_endpoint,
+                namespace=args.namespace,
+                mcp_deployment=args.mcp_deployment,
+            )
+        except ValidationError as exc:
+            parser.error(str(exc.errors(include_input=False, include_url=False)))
+        return _run_publish(config)
+    if args.command == "maintenance":
+        from docstral_worker.maintenance import PublicationState
+
+        try:
+            asyncio.run(
+                PublicationState(args.data_dir).set_maintenance(
+                    args.mode == "on",
+                    timeout=args.timeout,
+                )
+            )
+        except (IngestionError, OSError) as exc:
+            structlog.get_logger(__name__).error(
+                "maintenance_failed", error_message=str(exc)
+            )
+            return 1
+        return 0
     raise AssertionError("argparse accepted an unknown command")
 
 
@@ -167,6 +204,28 @@ def _run_ingest(config: IngestConfig) -> int:
     return 1 if result.failed else 0
 
 
+def _run_publish(config: PublishConfig) -> int:
+    from docstral_worker.publish import publish
+
+    try:
+        result = asyncio.run(publish(config))
+    except Exception as exc:
+        # Kubernetes/API exceptions may contain headers or response bodies: do not log them.
+        detail = (
+            str(exc)
+            if isinstance(exc, IngestionError)
+            else "Check worker configuration and dependency availability; retry publish to repair an incomplete index"
+        )
+        structlog.get_logger(__name__).error(
+            "publish_failed",
+            error_type=type(exc).__name__,
+            error_message=detail,
+        )
+        return 1
+    structlog.get_logger(__name__).info("publish_finished", **result.model_dump())
+    return 1 if result.failed else 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docstral-worker")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -214,6 +273,34 @@ def _parser() -> argparse.ArgumentParser:
         type=_http_endpoint,
         default=DEFAULT_VESPA_ENDPOINT,
         help="Vespa query and document endpoint",
+    )
+    publish_parser = commands.add_parser(
+        "publish", help="replace the cluster corpus while MCP is stopped"
+    )
+    publish_parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=Path(os.environ.get("DOCSTRAL_DATA_DIR", "/app/data")),
+    )
+    publish_parser.add_argument(
+        "--vespa-endpoint",
+        default=os.environ.get("VESPA_ENDPOINT"),
+    )
+    publish_parser.add_argument("--namespace", default=os.environ.get("POD_NAMESPACE"))
+    publish_parser.add_argument(
+        "--mcp-deployment", default=os.environ.get("MCP_DEPLOYMENT")
+    )
+    maintenance_parser = commands.add_parser(
+        "maintenance", help="pause or resume cluster publication"
+    )
+    maintenance_parser.add_argument("mode", choices=("on", "off"))
+    maintenance_parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=Path(os.environ.get("DOCSTRAL_DATA_DIR", "/app/data")),
+    )
+    maintenance_parser.add_argument(
+        "--timeout", type=_non_negative_float, default=120.0
     )
     return parser
 
