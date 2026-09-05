@@ -12,6 +12,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from docstral_worker import IngestionError
 from docstral_worker.crawl import PageDecision
+from docstral_worker.crawl_run import refresh_snapshot
 from docstral_worker.ingest import IngestResult, build_pipeline, ingest_snapshot
 from docstral_worker.kubernetes import in_cluster_mcp
 from docstral_worker.maintenance import PublicationState
@@ -73,7 +74,7 @@ class VespaCorpus:
         )
 
 
-async def publish(config: PublishConfig) -> IngestResult:
+async def publish(config: PublishConfig, *, refresh: bool = False) -> IngestResult:
     """Wire cluster-only dependencies and close their clients after publication."""
     from docstral_vespa import index_for_client
 
@@ -91,13 +92,19 @@ async def publish(config: PublishConfig) -> IngestResult:
                 build_pipeline(index=index, embedder=embedder),
                 VespaCorpus(client, cluster=index.schema.content_cluster),
                 mcp,
+                refresh=refresh,
             )
         finally:
             await client.aclose()
 
 
 async def publish_current(
-    state: PublicationState, pipeline: Pipeline, corpus: CorpusAdmin, mcp: McpControl
+    state: PublicationState,
+    pipeline: Pipeline,
+    corpus: CorpusAdmin,
+    mcp: McpControl,
+    *,
+    refresh: bool = False,
 ) -> IngestResult:
     """Publish a verified current snapshot under the exclusive worker lock."""
     async with state.lock():
@@ -106,6 +113,8 @@ async def publish_current(
             raise IngestionError(
                 "Publication refuses a symbolic-link snapshot root or pointer"
             )
+        if refresh:
+            await refresh_snapshot(root)
         snapshot = current_snapshot(root)
         if snapshot is None:
             raise IngestionError(f"No current snapshot under {str(root)!r}")
