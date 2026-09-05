@@ -14,29 +14,18 @@ Set `MISTRAL_API_KEY` in `.env`.
 
 ## Architecture
 
-- `apps/worker` owns all corpus mutations: crawling, extraction, snapshots,
-  and indexing.
-- `apps/backend` owns read-only retrieval and grounded Q&A.
-- `apps/mcp` exposes the backend through a thin FastMCP transport adapter.
-- `packages/vespa` is the shared Vespa application and index contract.
+- `apps/worker`: crawling, extraction and indexing.
+- `apps/backend`: retrieval and grounded Q&A, imported by MCP.
+- `apps/mcp`: FastMCP server.
+- `packages/vespa`: shared schema and index constructor.
 
-## Crawl
+## Local corpus
+
+Start Docker. `make ingest` replaces the existing local index.
 
 ```sh
 uv run docstral-worker crawl
-```
-
-## Extract
-
-```sh
 uv run docstral-worker extract
-```
-
-## Index
-
-Docker must be running.
-
-```sh
 make ingest
 ```
 
@@ -48,9 +37,7 @@ Vespa must be running with an indexed corpus.
 make mcp
 ```
 
-The FastMCP Streamable HTTP endpoint is `http://127.0.0.1:8000/mcp`.
-
-Connect it to Vibe:
+In another terminal, connect Vibe to the local Streamable HTTP endpoint:
 
 ```sh
 vibe mcp add docstral \
@@ -59,8 +46,32 @@ vibe mcp add docstral \
   --header X-Docstral-Client=vibe
 ```
 
-The non-secret header selects Vibe's static connection mode; this local baseline
-does not enforce authentication.
+The non-secret header selects Vibe's static mode. This command does not enable OAuth.
+
+### Google OAuth (invited users)
+
+Create a **Web application** OAuth client in
+[Google Auth Platform](https://console.cloud.google.com/auth/clients), with
+`http://localhost:8000/auth/callback` as the authorized redirect URI.
+
+Fill the OAuth settings from [.env.example](.env.example) in `.env`.
+Only verified addresses in `DOCSTRAL_ALLOWED_EMAILS` can use the tool;
+Google's test-user list is not the access control for these identity-only scopes.
+
+```sh
+# Server terminal (stop any existing MCP first)
+uv run --env-file .env docstral-mcp --auth google
+# Another terminal
+vibe mcp add docstral-google --url http://localhost:8000/mcp --transport streamable-http
+```
+
+In Vibe, use `/mcp login docstral-google` if needed, then ask `ask_docs` a question
+and request all sources. Test outside the repository to avoid local-file context.
+
+Keep `FASTMCP_HOME` (`data/oauth`) and the secret signing key across restarts;
+Docker storage must be writable by UID 1000. This remains local, with one MCP
+instance. Public hosting requires HTTPS; invitations do not cap API spending.
+See [FastMCP OAuth](https://gofastmcp.com/integrations/google).
 
 ## Docker images
 
@@ -82,20 +93,12 @@ uv run --env-file .env docker run --rm --platform linux/amd64 \
   docstral-mcp:local --vespa-endpoint http://host.docker.internal:8080
 ```
 
-The MCP endpoint remains `http://127.0.0.1:8000/mcp`, without authentication.
-Both images run as UID/GID 1000. Mount worker data at `/app/data`, writable by
-that user; images contain neither snapshots nor secrets. Run `make ingest` on
-the host: these images do not manage Vespa.
-
-For the cluster-only replacement command, see the
-[worker publication guide](apps/worker/README.md). Cluster provisioning remains
-a separate step; local `make ingest` is unchanged.
-
-For GitHub image builds and registry configuration, see the
-[runtime image CI guide](deployment/README.md).
+This serves `/mcp` without authentication. Images run as UID/GID 1000 and contain
+no corpus or secrets. Mount worker data at `/app/data`; run local ingestion on
+the host. See [cluster publication](apps/worker/README.md) and
+[image CI](deployment/README.md). Cluster provisioning is separate.
 
 ## Retrieval evaluation
 
-The [evaluation report](evals/README.md) documents the reviewed dataset, retained
-and deferred metrics, dense/hybrid results, and the local reproduction command.
-It measures retrieved evidence, not generated-answer quality.
+See [dataset, results and reproduction commands](evals/README.md).
+This evaluates retrieved evidence, not generated-answer quality.
