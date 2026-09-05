@@ -203,3 +203,12 @@ never rewrite history. -->
   search. Reranking quality, chunk enrichment, and a consolidated evaluation of
   the Q&A path remain unmeasured. Method, run history, and limitations are in
   [evals/README.md](evals/README.md).
+- D016 — Build separate MCP and worker runtime images from the workspace root,
+  installing only each application's locked dependencies as non-editable
+  packages. Pin Python and uv images by digest and run as UID/GID 1000. Why:
+  MCP consumes the backend as a library, both runtimes share the Vespa contract,
+  and neither runtime needs the repository, build tooling, or a Docker daemon.
+  Worker data stays outside its image at `/app/data`; local Docker execution
+  does not add authentication or change the ingestion and answering behavior.
+  Dockerfiles live in `deployment/docker/`; GitHub CI/CD workflows belong in
+  `.github/workflows/`.

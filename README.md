@@ -62,6 +62,31 @@ vibe mcp add docstral \
 The non-secret header selects Vibe's static connection mode; this local baseline
 does not enforce authentication.
 
+## Docker images
+
+Build from the repository root (AMD64 is the GKE deployment target):
+
+```sh
+docker build --platform linux/amd64 \
+  -f deployment/docker/mcp.Dockerfile -t docstral-mcp:local .
+docker build --platform linux/amd64 \
+  -f deployment/docker/worker.Dockerfile -t docstral-worker:local .
+docker run --rm --platform linux/amd64 docstral-worker:local --help
+```
+
+With Docker Desktop and an indexed Vespa listening on the host's port 8080:
+
+```sh
+uv run --env-file .env docker run --rm --platform linux/amd64 \
+  --publish 127.0.0.1:8000:8000 --env MISTRAL_API_KEY \
+  docstral-mcp:local --vespa-endpoint http://host.docker.internal:8080
+```
+
+The MCP endpoint remains `http://127.0.0.1:8000/mcp`, without authentication.
+Both images run as UID/GID 1000. Mount worker data at `/app/data`, writable by
+that user; images contain neither snapshots nor secrets. Run `make ingest` on
+the host: these images do not manage Vespa.
+
 ## Retrieval evaluation
 
 The [evaluation report](evals/README.md) documents the reviewed dataset, retained

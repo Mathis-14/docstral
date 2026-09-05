@@ -1,0 +1,16 @@
+**
+!pyproject.toml
+!uv.lock
+!apps/
+!apps/*/
+!apps/*/pyproject.toml
+!apps/*/src/
+!apps/*/src/**
+!packages/
+!packages/*/
+!packages/*/pyproject.toml
+!packages/*/src/
+!packages/*/src/**
+**/__pycache__/
+**/*.py[cod]
+**/.env*
