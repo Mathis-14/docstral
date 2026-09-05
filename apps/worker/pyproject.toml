@@ -13,6 +13,7 @@ dependencies = [
     "httpx",
     "kubernetes==36.0.3",
     "mistralai-search-toolkit[html-converter-markdownify]==0.0.13",
+    "mistralai-workflows==3.13.0",
     "protego",
     "pydantic",
     "structlog",
