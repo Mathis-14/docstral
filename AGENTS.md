@@ -248,3 +248,11 @@ never rewrite history. -->
   startup never creates or activates a schedule; scheduling is an explicit
   operator operation after deployment verification, hourly with overlap `SKIP`
   and `pause_on_failure=True` until manual recovery and resumption.
+- D020 — Deploy one Vespa StatefulSet and single worker/MCP Deployments with
+  native Kustomize, persistent disks and internal Services. Why: the first
+  GKE target reproduces the local runtime without Helm, Terraform or a second
+  backend process. A manual deployment selects one stable release, verifies
+  both image revisions, pins their digests and holds D017 maintenance through
+  migration and rollout. Initial MCP replicas stay at zero until publication;
+  deployment never ingests or enables a schedule. First remote access uses an
+  authenticated port-forward; public HTTPS and high availability are deferred.
