@@ -4,13 +4,14 @@ from docstral_worker.kubernetes import McpDeployment, in_cluster_mcp
 
 # Exercise the actual untyped SDK response models without contacting Kubernetes.
 from kubernetes.aio import client  # type: ignore[import-untyped]
+from pydantic import ValidationError
 
 
 class _Apps:
     def __init__(self) -> None:
         self.replicas = 1
         self.observed = 2
-        self.deployment_replicas = 0
+        self.deployment_replicas: int | None = 0
         self.patches: list[dict[str, object]] = []
 
     async def read_namespaced_deployment_scale(
@@ -20,7 +21,10 @@ class _Apps:
         return client.V1Scale(
             # The /scale response does not populate metadata.generation.
             metadata=client.V1ObjectMeta(resource_version="version-1"),
-            spec=client.V1ScaleSpec(replicas=self.replicas),
+            # Kubernetes omits spec.replicas at zero; the SDK returns None.
+            spec=client.V1ScaleSpec(
+                replicas=None if self.replicas == 0 else self.replicas
+            ),
             status=client.V1ScaleStatus(
                 selector="app=docstral-mcp", replicas=self.replicas
             ),
@@ -36,6 +40,11 @@ class _Apps:
     ) -> object:
         assert (namespace, name, _request_timeout) == ("docstral", "mcp", 15)
         self.patches.append(body)
+        spec = body["spec"]
+        assert isinstance(spec, dict)
+        replicas = spec["replicas"]
+        assert isinstance(replicas, int)
+        self.replicas = replicas
         return None
 
     async def read_namespaced_deployment(
@@ -69,8 +78,12 @@ class _Core:
         return client.V1PodList(items=self.pods)
 
 
-async def test_mcp_scale_targets_one_deployment_with_version_precondition() -> None:
+@pytest.mark.parametrize("replicas", [0, 1])
+async def test_mcp_scale_targets_one_deployment_with_version_precondition(
+    replicas: int,
+) -> None:
     apps, core = _Apps(), _Core()
+    apps.replicas = replicas
     mcp = McpDeployment(apps, core, "docstral", "mcp")
     await mcp.check()
     await mcp.stop()
@@ -80,6 +93,24 @@ async def test_mcp_scale_targets_one_deployment_with_version_precondition() -> N
         {"metadata": {"resourceVersion": "version-1"}, "spec": {"replicas": 0}},
         {"metadata": {"resourceVersion": "version-1"}, "spec": {"replicas": 1}},
     ]
+    assert apps.replicas == 1
+
+
+@pytest.mark.parametrize("replicas", [-1, 2])
+async def test_scale_rejects_invalid_replica_count(replicas: int) -> None:
+    apps = _Apps()
+    apps.replicas = replicas
+    with pytest.raises(ValidationError, match="replicas"):
+        await McpDeployment(apps, _Core(), "docstral", "mcp").check()
+    assert apps.patches == []
+
+
+async def test_stop_does_not_default_missing_deployment_replicas() -> None:
+    apps, core = _Apps(), _Core()
+    apps.deployment_replicas = None
+    with pytest.raises(ValidationError, match="replicas"):
+        await McpDeployment(apps, core, "docstral", "mcp").stop()
+    assert core.calls == 0
 
 
 @pytest.mark.parametrize("pending", ["pods", "controller"])
