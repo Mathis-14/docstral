@@ -6,7 +6,7 @@ The backend runs inside the MCP image; Mistral hosts the models and scheduling.
 ```text
 Vibe --HTTPS/Google OAuth--> Gateway --> MCP + backend --> Vespa
 Mistral Workflows <-------- worker ---------> Vespa
-                           polling / crawl / publish
+                           polling / incremental ingestion
 ```
 
 ## Runtime
@@ -14,7 +14,7 @@ Mistral Workflows <-------- worker ---------> Vespa
 | Service | CPU request | RAM request / limit | Persistent disk |
 | --- | --- | --- | --- |
 | Vespa | 2 | 6 / 8 GiB | 20 GiB: data and logs |
-| Worker | 0.5 | 2 / 3 GiB | 10 GiB: snapshots and publication state |
+| Worker | 0.5 | 2 / 3 GiB | 10 GiB: snapshots, prepared articles and indexed state |
 | MCP | 0.25 | 0.5 / 1 GiB | 1 GiB: encrypted OAuth state |
 
 Initial sizing, to measure during real ingestion. Disks survive pod replacement;
@@ -44,7 +44,9 @@ tags. Configure [GitHub Workload Identity Federation](https://docs.cloud.google.
 for trusted publication events, with builder writes limited to that repository.
 No JSON service account key is required. Use a separate deployer identity with
 registry read, GKE cluster discovery and namespace-scoped Kubernetes deployment
-permissions (including RBAC and pod exec). Restrict its WIF binding to this
+permissions, including pod exec and deletion of the old worker Role and
+RoleBinding. The worker itself has no Kubernetes API permissions or mounted
+service-account token. Restrict the deployer's WIF binding to this
 repository's `production` environment and manual `deploy.yml` runs on `main`.
 Match GitHub's actual OIDC subject, including immutable owner/repository IDs.
 Launching **Run workflow** is the deployment approval; no second review is required.
@@ -73,10 +75,8 @@ Set these additional variables in the `production` environment:
 Override `GCP_WORKLOAD_IDENTITY_PROVIDER` in the `production` environment with
 a separate deployment pool; keep the repository-level provider for image builds.
 
-Before deploying, create namespace `docstral` using `kubernetes/namespace.yaml`,
-then apply `kubernetes/worker-rbac.yaml` there as the cluster operator. This
-prepares the first server-side dry-run without granting the deployer `bind`
-or `escalate`. Provision the objects below; keep secret files outside Git and
+Before deploying, create namespace `docstral` using `kubernetes/namespace.yaml`.
+Provision the objects below; keep secret files outside Git and
 never paste secret values into command arguments or logs.
 
 | Object | Required keys |
@@ -99,7 +99,7 @@ characters long. See [MCP setup](../README.md#google-oauth-invited-users) for in
 ## Deploy and test
 
 Pause any existing ingestion schedule before updating. Use this workflow, not
-direct manifest application, to preserve publication/maintenance guards.
+direct manifest application, to preserve ingestion and maintenance guards.
 
 1. Publish a stable `vX.Y.Z` release containing these manifests. Wait for **both**
    image workflows to succeed.
@@ -107,11 +107,14 @@ direct manifest application, to preserve publication/maintenance guards.
    release, or select a specific tag. Check `bootstrap` only on the first run,
    before any workloads or persistent volumes exist in the namespace.
 3. The workflow verifies paired image revisions, enters maintenance, stops MCP
-   and worker, migrates Vespa, then restarts the worker. It resumes MCP only if
-   a corpus was already published. Failure never automatically clears maintenance.
-4. On first installation only, trigger `docstral-refresh` manually in AI Studio.
-   Existing published corpora need no re-ingestion. Keep scheduling disabled
-   until publication and the Vibe test succeed. See
+   and worker, removes the worker's old Kubernetes permissions, migrates Vespa,
+   then starts worker and MCP. An empty corpus returns the usual abstention;
+   MCP startup does not wait for ingestion. Failure never automatically clears
+   maintenance. Ingestion itself leaves both runtimes running.
+4. Trigger `docstral-refresh` manually in AI Studio with `{}`. The first run
+   reconciles the existing corpus and initializes the indexed-page registry;
+   subsequent runs update only added or changed articles and delete absent ones.
+   Keep scheduling disabled until the refresh and Vibe test succeed. See
    [worker operations](../apps/worker/README.md).
 
 ```sh
@@ -128,10 +131,12 @@ for inspection. Deployment never creates a schedule or waits for certificate iss
 ## Failure recovery
 
 Inspect the failed Actions step and `kubectl -n docstral logs job/<job-name>`.
-Do not delete volumes or publication markers. If the worker was stopped, fix
+Do not delete volumes or indexed state. If the worker was stopped, fix
 its configuration/image and scale it to one replica before retrying deployment.
-An incomplete publication must be repaired through the worker's `publish`
-command; maintenance refuses to hide it. Keep `bootstrap` checked only if no
+For failed ingestion, start a fresh `docstral-refresh` invocation with `{}`;
+pending articles are retried against the new crawl. For an interrupted legacy
+publication, follow [worker recovery](../apps/worker/README.md) before deploying.
+Keep `bootstrap` checked only if no
 runtime resources or PVCs were created; otherwise uncheck it on retry.
 Maintenance is released only on success.
 
