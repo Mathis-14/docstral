@@ -26,7 +26,7 @@ kind: Deployment
 metadata:
   name: mcp
 spec:
-  # Only a successful publication or guarded deployment may resume serving.
+  # The deployment workflow starts MCP after migration succeeds.
   replicas: 0
   strategy:
     type: Recreate
