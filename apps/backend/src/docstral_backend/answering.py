@@ -25,7 +25,7 @@ _ABSTENTION_MESSAGE = (
     "I couldn't find enough information in the Mistral documentation to answer "
     "this question."
 )
-_MODEL = "mistral-small-2603"
+DEFAULT_ANSWER_MODEL = "ministral-8b-2512"
 _MAX_ANSWER_TOKENS = 1024
 _SYSTEM_PROMPT = """You answer questions about Mistral's documentation.
 
@@ -122,12 +122,14 @@ class DocumentationAnswerer:
         chat: _Chat,
         *,
         top_k: int,
+        model: str = DEFAULT_ANSWER_MODEL,
     ) -> None:
         if top_k < 1:
             raise ValueError("top_k must be at least 1")
         self._retriever = retriever
         self._chat = chat
         self._top_k = top_k
+        self._model = model
 
     async def answer(self, question: str) -> AnswerResponse:
         """Answer from retrieved chunks or abstain when evidence is insufficient."""
@@ -138,7 +140,7 @@ class DocumentationAnswerer:
             return _abstention()
 
         result = await self._chat.parse_chat(
-            model=_MODEL,
+            model=self._model,
             messages=[
                 ChatMessage(role="system", content=_SYSTEM_PROMPT),
                 ChatMessage(
@@ -162,13 +164,14 @@ class DocumentationAnswerer:
 
 
 def build_documentation_answerer(
-    *, vespa_endpoint: str, top_k: int
+    *, vespa_endpoint: str, top_k: int, model: str = DEFAULT_ANSWER_MODEL
 ) -> DocumentationAnswerer:
     """Build the grounded answerer used by Docstral's serving process."""
     return DocumentationAnswerer(
         build_documentation_retriever(vespa_endpoint=vespa_endpoint),
         MistralChat(),
         top_k=top_k,
+        model=model,
     )
 
 

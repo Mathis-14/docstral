@@ -1,6 +1,38 @@
 import docstral_mcp.serve as serve
 import pytest
 from fastmcp import FastMCP
+from pydantic import AnyHttpUrl
+
+
+@pytest.mark.parametrize("model", [None, "mistral-small-2603"])
+def test_answer_model_setting(
+    model: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DOCSTRAL_ANSWER_MODEL", raising=False)
+    if model is not None:
+        monkeypatch.setenv("DOCSTRAL_ANSWER_MODEL", model)
+
+    config = serve.ServerConfig(
+        host="127.0.0.1",
+        port=8000,
+        top_k=5,
+        vespa_endpoint=AnyHttpUrl("http://localhost:8080"),
+    )
+
+    assert config.answer_model == (model or "ministral-8b-2512")
+
+
+@pytest.mark.parametrize("model", ["", "   "])
+def test_command_rejects_blank_model(
+    model: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOCSTRAL_ANSWER_MODEL", model)
+    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+
+    with pytest.raises(SystemExit) as caught:
+        serve.main([])
+
+    assert caught.value.code == 2
 
 
 @pytest.mark.parametrize(

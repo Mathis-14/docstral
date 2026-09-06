@@ -256,3 +256,10 @@ never rewrite history. -->
   migration and rollout. Initial MCP replicas stay at zero until publication;
   deployment never ingests or enables a schedule. First remote access uses an
   authenticated port-forward; public HTTPS and high availability are deferred.
+- D021 — Read `DOCSTRAL_ANSWER_MODEL` at MCP startup, defaulting to the dated
+  `ministral-8b-2512`; supersedes only D013's fixed model. Why: operators need
+  to change generation models without rebuilding images when model access is
+  restricted. Keep the override in the operator-owned `runtime` ConfigMap and
+  restart MCP to apply it. Reject blank values; never switch models on failure.
+  Embeddings, retrieval and citation validation are unchanged; answer quality
+  with the new model still needs evaluation.

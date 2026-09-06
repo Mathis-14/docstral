@@ -99,7 +99,7 @@ async def test_answer_uses_structured_evidence_and_builds_page_citations() -> No
         ("Shared", shared_url),
     ]
     assert chat.response_format is _AnswerDraft
-    assert chat.model == "mistral-small-2603"
+    assert chat.model == "ministral-8b-2512"
     assert chat.temperature == 0.0
     assert chat.max_tokens == 1024
     assert chat.messages is not None
@@ -117,6 +117,17 @@ async def test_answer_uses_structured_evidence_and_builds_page_citations() -> No
             {"id": "E3", "title": "Other", "content": "Third"},
         ],
     }
+
+
+async def test_answer_uses_selected_model() -> None:
+    chunk = _chunk("chunk-1", f"{DOCS}/page", "Page", "Content")
+    chat = _FakeChat(_AnswerDraft(answer="Grounded answer.", evidence_ids=("E1",)))
+
+    await DocumentationAnswerer(
+        _FakeRetriever((chunk,)), chat, top_k=1, model="mistral-small-2603"
+    ).answer("Question?")
+
+    assert chat.model == "mistral-small-2603"
 
 
 async def test_answer_abstains_without_calling_chat_when_no_chunks() -> None:

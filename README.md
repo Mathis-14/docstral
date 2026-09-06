@@ -32,6 +32,8 @@ make ingest
 ## MCP
 
 Vespa must be running with an indexed corpus.
+`DOCSTRAL_ANSWER_MODEL` selects the answer model (default: `ministral-8b-2512`);
+restart MCP after changing it. Embeddings and the corpus are unchanged.
 
 ```sh
 make mcp

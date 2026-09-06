@@ -60,6 +60,12 @@ spec:
             - name: DOCSTRAL_OAUTH_BASE_URL
               valueFrom:
                 configMapKeyRef: {name: runtime, key: DOCSTRAL_OAUTH_BASE_URL}
+            - name: DOCSTRAL_ANSWER_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: runtime
+                  key: DOCSTRAL_ANSWER_MODEL
+                  optional: true
             - {name: FASTMCP_HOME, value: /app/auth}
           ports:
             - {name: http, containerPort: 8000}
