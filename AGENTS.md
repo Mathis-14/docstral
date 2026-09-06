@@ -263,3 +263,12 @@ never rewrite history. -->
   restart MCP to apply it. Reject blank values; never switch models on failure.
   Embeddings, retrieval and citation validation are unchanged; answer quality
   with the new model still needs evaluation.
+- D022 — Expose only MCP through a GKE global external HTTPS Gateway, with
+  Google-managed TLS, an explicit HTTP health route and the existing OAuth
+  invitations. Why: remote clients need a stable public origin without gaining
+  cluster access or exposing corpus mutation. Gateway manifests follow the
+  guarded release deployment; DNS, IP, certificate and TLS policy are operator
+  prerequisites. Render public resource references from environment variables,
+  reject an OAuth-origin mismatch before maintenance, and disable load balancer
+  access logs to avoid recording authorization codes. Pod readiness does not
+  prove public TLS or Q&A readiness; certificate issuance does not hold maintenance.

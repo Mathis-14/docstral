@@ -72,8 +72,8 @@ and request all sources. Test outside the repository to avoid local-file context
 
 Keep `FASTMCP_HOME` (`data/oauth`) and the secret signing key across restarts;
 Docker storage must be writable by UID 1000. This remains local, with one MCP
-instance. Public hosting requires HTTPS; invitations do not cap API spending.
-See [FastMCP OAuth](https://gofastmcp.com/integrations/google).
+instance. For remote access, see [GKE HTTPS setup](deployment/https.md).
+Invitations do not cap API spending. See [FastMCP OAuth](https://gofastmcp.com/integrations/google).
 
 ## Docker images
 
