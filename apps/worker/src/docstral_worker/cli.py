@@ -6,7 +6,6 @@ import os
 from collections.abc import Sequence
 from math import isfinite
 from pathlib import Path
-from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import structlog
@@ -23,9 +22,6 @@ from docstral_worker.crawl_run import CrawlConfig, crawl_snapshot
 from docstral_worker.extract import ExtractionError, extract_snapshot
 from docstral_worker.ingest import build_pipeline, ingest_snapshot
 from docstral_worker.snapshot import current_snapshot
-
-if TYPE_CHECKING:
-    from docstral_worker.publish import PublishConfig
 
 DEFAULT_SNAPSHOTS = Path("data/snapshots")
 DEFAULT_EXTRACTED = Path("data/extracted")
@@ -57,7 +53,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         os.environ["OTEL_REDACTION"] = "strict"
         from docstral_worker.workflows import run_worker
 
-        _configure_logging()
         try:
             asyncio.run(run_worker())
         except ValidationError as exc:
@@ -81,25 +76,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 vespa_endpoint=args.vespa_endpoint,
             )
         )
-    if args.command == "publish":
-        from docstral_worker.publish import PublishConfig
-
-        try:
-            config = PublishConfig(
-                data_dir=args.data_dir,
-                vespa_endpoint=args.vespa_endpoint,
-                namespace=args.namespace,
-                mcp_deployment=args.mcp_deployment,
-            )
-        except ValidationError as exc:
-            parser.error(str(exc.errors(include_input=False, include_url=False)))
-        return _run_publish(config)
     if args.command == "maintenance":
-        from docstral_worker.maintenance import PublicationState
+        from docstral_worker.maintenance import WorkerState
 
         try:
             asyncio.run(
-                PublicationState(args.data_dir).set_maintenance(
+                WorkerState(args.data_dir).set_maintenance(
                     args.mode == "on",
                     timeout=args.timeout,
                 )
@@ -191,28 +173,6 @@ def _run_ingest(config: IngestConfig) -> int:
     return 1 if result.failed else 0
 
 
-def _run_publish(config: PublishConfig) -> int:
-    from docstral_worker.publish import publish
-
-    try:
-        result = asyncio.run(publish(config))
-    except Exception as exc:
-        # Kubernetes/API exceptions may contain headers or response bodies: do not log them.
-        detail = (
-            str(exc)
-            if isinstance(exc, IngestionError)
-            else "Check worker configuration and dependency availability; retry publish to repair an incomplete index"
-        )
-        structlog.get_logger(__name__).error(
-            "publish_failed",
-            error_type=type(exc).__name__,
-            error_message=detail,
-        )
-        return 1
-    structlog.get_logger(__name__).info("publish_finished", **result.model_dump())
-    return 1 if result.failed else 0
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docstral-worker")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -262,24 +222,8 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_VESPA_ENDPOINT,
         help="Vespa query and document endpoint",
     )
-    publish_parser = commands.add_parser(
-        "publish", help="replace the cluster corpus while MCP is stopped"
-    )
-    publish_parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path(os.environ.get("DOCSTRAL_DATA_DIR", "/app/data")),
-    )
-    publish_parser.add_argument(
-        "--vespa-endpoint",
-        default=os.environ.get("VESPA_ENDPOINT"),
-    )
-    publish_parser.add_argument("--namespace", default=os.environ.get("POD_NAMESPACE"))
-    publish_parser.add_argument(
-        "--mcp-deployment", default=os.environ.get("MCP_DEPLOYMENT")
-    )
     maintenance_parser = commands.add_parser(
-        "maintenance", help="pause or resume cluster publication"
+        "maintenance", help="pause or resume ingestion"
     )
     maintenance_parser.add_argument("mode", choices=("on", "off"))
     maintenance_parser.add_argument(

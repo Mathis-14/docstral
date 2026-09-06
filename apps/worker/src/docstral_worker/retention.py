@@ -13,12 +13,12 @@ from docstral_worker.snapshot import MANIFEST_FILE, SnapshotManifest, current_sn
 _SNAPSHOT_NAME = re.compile(r"\d{8}T\d{6}Z(?:-failed)?")
 
 
-def prune_snapshots(root: Path, *, published: str | None) -> None:
-    """Keep two complete snapshots, one failed run, current and published."""
+def prune_snapshots(root: Path) -> None:
+    """Keep two complete snapshots, one failed run and current."""
     if root.is_symlink():
         raise IngestionError("Snapshot retention refuses a symbolic-link root")
     current = current_snapshot(root)
-    protected = {published, current.directory.name if current else None}
+    protected = {current.directory.name if current else None}
     complete: list[Path] = []
     failed: list[Path] = []
     for directory in root.iterdir():
