@@ -4,7 +4,7 @@ Single-node GKE baseline: one zonal `e2-standard-4` (4 vCPU, 16 GB), not HA.
 The backend runs inside the MCP image; Mistral hosts the models and scheduling.
 
 ```text
-Vibe --port-forward/OAuth--> MCP + backend --> Vespa
+Vibe --HTTPS/Google OAuth--> Gateway --> MCP + backend --> Vespa
 Mistral Workflows <-------- worker ---------> Vespa
                            polling / crawl / publish
 ```
@@ -18,8 +18,8 @@ Mistral Workflows <-------- worker ---------> Vespa
 | MCP | 0.25 | 0.5 / 1 GiB | 1 GiB: encrypted OAuth state |
 
 Initial sizing, to measure during real ingestion. Disks survive pod replacement;
-they are not backups. Services are cluster-internal; no public endpoint exists.
-Local manifest tests require `kubectl` (with its built-in Kustomize).
+they are not backups. Services remain cluster-internal; only MCP is routed
+through the public HTTPS Gateway. Manifest tests require `kubectl` and `envsubst`.
 
 ## Image CI
 
@@ -61,6 +61,15 @@ Set these GitHub Actions repository variables:
 | `GKE_CLUSTER` | Cluster name |
 | `GKE_LOCATION` | Cluster zone |
 
+Set these additional variables in the `production` environment:
+
+| Variable | Purpose |
+| --- | --- |
+| `MCP_PUBLIC_HOSTNAME` | Public DNS hostname, without scheme or path |
+| `MCP_PUBLIC_IP_NAME` | Reserved global IPv4 address name |
+| `MCP_TLS_CERT_NAME` | Global Google-managed SSL certificate name |
+| `MCP_TLS_POLICY_NAME` | Global SSL policy name (TLS 1.2 minimum) |
+
 Override `GCP_WORKLOAD_IDENTITY_PROVIDER` in the `production` environment with
 a separate deployment pool; keep the repository-level provider for image builds.
 
@@ -82,10 +91,10 @@ Optional: set `DOCSTRAL_ANSWER_MODEL` in ConfigMap `runtime` to override
 Do this outside ingestion/deployment; expect a brief MCP interruption. No image
 build or re-ingestion is needed; deployments preserve this operator-owned setting.
 
-For the first port-forward test, use `http://localhost:8000` as the OAuth origin
-and `http://localhost:8000/auth/callback` as Google's authorized redirect URI.
-Keep the signing key stable and at least 32 characters long; see the
-[MCP setup](../README.md#google-oauth-invited-users) for invitations and client configuration.
+Complete the one-time [public HTTPS setup](https.md) before deploying this release.
+Use `https://<MCP_PUBLIC_HOSTNAME>` as the OAuth origin; deployment rejects a
+mismatch before maintenance. Keep the signing key stable and at least 32
+characters long. See [MCP setup](../README.md#google-oauth-invited-users) for invitations.
 
 ## Deploy and test
 
@@ -100,21 +109,21 @@ direct manifest application, to preserve publication/maintenance guards.
 3. The workflow verifies paired image revisions, enters maintenance, stops MCP
    and worker, migrates Vespa, then restarts the worker. It resumes MCP only if
    a corpus was already published. Failure never automatically clears maintenance.
-4. In AI Studio, trigger `docstral-refresh` manually on the configured deployment.
-   Keep scheduling disabled until this and the Vibe test succeed. See
+4. On first installation only, trigger `docstral-refresh` manually in AI Studio.
+   Existing published corpora need no re-ingestion. Keep scheduling disabled
+   until publication and the Vibe test succeed. See
    [worker operations](../apps/worker/README.md).
 
 ```sh
 kubectl -n docstral get pods,pvc,jobs
 kubectl -n docstral logs deployment/worker --tail=100
 kubectl -n docstral rollout status deployment/mcp --timeout=300s
-kubectl -n docstral port-forward service/mcp 8000:8000
 ```
 
-Connect Vibe to `http://localhost:8000/mcp` with OAuth, log in, then ask it to call
-`ask_docs` and preserve the returned sources. This exercises the remote corpus.
-Readiness proves Vespa HTTP, worker health, or MCP's listening socket—not Q&A
-quality. Use `k9s -n docstral` for inspection. No schedule is created by deployment.
+After DNS and TLS are ready, connect Vibe to `https://<MCP_PUBLIC_HOSTNAME>/mcp`,
+log in and call `ask_docs` with sources; follow the [public checks](https.md#verify).
+Pod readiness is not public HTTPS readiness or Q&A quality. Use `k9s -n docstral`
+for inspection. Deployment never creates a schedule or waits for certificate issuance.
 
 ## Failure recovery
 
@@ -126,7 +135,7 @@ command; maintenance refuses to hide it. Keep `bootstrap` checked only if no
 runtime resources or PVCs were created; otherwise uncheck it on retry.
 Maintenance is released only on success.
 
-Public HTTPS, rate limiting, backups and availability beyond one node remain
-separate work. Reference: [Vespa persistence](https://docs.vespa.ai/en/operations/self-managed/docker-containers.html),
+Rate limiting, backups and availability beyond one node remain separate work.
+Reference: [Vespa persistence](https://docs.vespa.ai/en/operations/self-managed/docker-containers.html),
 [GKE disks](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/gce-pd-csi-driver),
 [native Workflows workers](https://docs.mistral.ai/studio/workflows/getting-started/core_concepts/workers).

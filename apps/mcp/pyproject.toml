@@ -12,6 +12,7 @@ dependencies = [
     "fastmcp==4.0.2",
     "pydantic[email]",
     "pydantic-settings",
+    "starlette",
 ]
 
 [tool.uv.sources]

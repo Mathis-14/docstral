@@ -1,0 +1,13 @@
+# Applied once by the cluster operator, not by the deployment workflow itself.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-public-deployer
+  namespace: docstral
+rules:
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gateways, httproutes]
+    verbs: [get, list, watch, create, patch]
+  - apiGroups: [networking.gke.io]
+    resources: [gcpgatewaypolicies, gcpbackendpolicies, healthcheckpolicies]
+    verbs: [get, list, watch, create, patch]

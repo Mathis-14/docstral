@@ -1,0 +1,81 @@
+# Render only these four environment variables before applying this manifest.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mcp
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  addresses:
+    - type: NamedAddress
+      value: "${MCP_PUBLIC_IP_NAME}"
+  listeners:
+    - name: https
+      hostname: "${MCP_PUBLIC_HOSTNAME}"
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        options:
+          networking.gke.io/pre-shared-certs: "${MCP_TLS_CERT_NAME}"
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp
+spec:
+  parentRefs:
+    - name: mcp
+      sectionName: https
+  hostnames: ["${MCP_PUBLIC_HOSTNAME}"]
+  rules:
+    # Include discovery, registration and OAuth callbacks, not just /mcp.
+    - backendRefs:
+        - name: mcp
+          port: 8000
+---
+apiVersion: networking.gke.io/v1
+kind: GCPGatewayPolicy
+metadata:
+  name: mcp
+spec:
+  default:
+    sslPolicy: "${MCP_TLS_POLICY_NAME}"
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: mcp
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: mcp
+spec:
+  default:
+    timeoutSec: 120
+    # OAuth callback query strings contain authorization codes.
+    logging:
+      enabled: false
+  targetRef:
+    group: ""
+    kind: Service
+    name: mcp
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: mcp
+spec:
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_FIXED_PORT
+        port: 8000
+        requestPath: /healthz
+  targetRef:
+    group: ""
+    kind: Service
+    name: mcp

@@ -70,11 +70,11 @@ spec:
           ports:
             - {name: http, containerPort: 8000}
           startupProbe:
-            tcpSocket: {port: http}
+            httpGet: {path: /healthz, port: http}
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
-            tcpSocket: {port: http}
+            httpGet: {path: /healthz, port: http}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

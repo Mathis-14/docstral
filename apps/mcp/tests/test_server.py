@@ -1,3 +1,4 @@
+import httpx2
 from docstral_backend import AnswerResponse, Citation
 from docstral_mcp import create_server
 from fastmcp import Client
@@ -20,6 +21,28 @@ class _FakeAnswerer:
         if self.error is not None:
             raise self.error
         return self.response
+
+
+async def test_health_is_available_without_calling_the_answerer() -> None:
+    response = AnswerResponse(
+        answer=(
+            "I couldn't find enough information in the Mistral documentation to "
+            "answer this question."
+        ),
+        abstained=True,
+        citations=(),
+    )
+    answerer = _FakeAnswerer(response, error=RuntimeError("Dependency unavailable"))
+    app = create_server(answerer).http_app()
+    async with app.router.lifespan_context(app):
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://localhost"
+        ) as client:
+            health = await client.get("/healthz")
+
+    assert health.status_code == 200
+    assert health.text == "ok"
+    assert answerer.questions == []
 
 
 async def test_server_exposes_one_read_only_grounded_answer_tool() -> None:

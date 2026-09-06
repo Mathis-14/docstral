@@ -35,6 +35,10 @@ jobs:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
       REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/docstral
+      MCP_PUBLIC_HOSTNAME: ${{ vars.MCP_PUBLIC_HOSTNAME }}
+      MCP_PUBLIC_IP_NAME: ${{ vars.MCP_PUBLIC_IP_NAME }}
+      MCP_TLS_CERT_NAME: ${{ vars.MCP_TLS_CERT_NAME }}
+      MCP_TLS_POLICY_NAME: ${{ vars.MCP_TLS_POLICY_NAME }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -115,8 +119,14 @@ jobs:
         env:
           BOOTSTRAP: ${{ inputs.bootstrap }}
         run: |
+          bash deployment/render-public.sh < /dev/null
           kubectl -n docstral get secret mistral mcp-google -o name
-          kubectl -n docstral get configmap runtime -o name
+          origin=$(kubectl -n docstral get configmap runtime -o jsonpath='{.data.DOCSTRAL_OAUTH_BASE_URL}')
+          [[ "$origin" == "https://$MCP_PUBLIC_HOSTNAME" || "$origin" == "https://$MCP_PUBLIC_HOSTNAME/" ]] || {
+            echo '::error::runtime.DOCSTRAL_OAUTH_BASE_URL must match the public HTTPS hostname'; exit 1;
+          }
+          # Check CRD discovery and namespace permissions before stopping anything.
+          kubectl -n docstral get gateways,httproutes,gcpgatewaypolicies,gcpbackendpolicies,healthcheckpolicies -o name
           kubectl -n docstral get jobs -o json | jq -e '
             [.items[] | select(.metadata.name | startswith("vespa-migrate-"))
               | select(any(.status.conditions[]?; .status == "True" and (.type == "Complete" or .type == "Failed")) | not)] | length == 0'
@@ -141,6 +151,7 @@ jobs:
               "${MCP_IMAGE%@*}" "${MCP_IMAGE#*@}" > "$RUNNER_TEMP/$target/kustomization.yaml"
           done
           printf 'nameSuffix: -%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$RUNNER_TEMP/migration/kustomization.yaml"
+          bash deployment/render-public.sh < deployment/kubernetes/gateway.yaml > "$RUNNER_TEMP/runtime/base/gateway.yaml"
           kubectl kustomize "$RUNNER_TEMP/runtime" > "$RUNNER_TEMP/runtime.yaml"
           kubectl kustomize "$RUNNER_TEMP/migration" > "$RUNNER_TEMP/migration.yaml"
           kubectl apply --dry-run=server -f "$RUNNER_TEMP/runtime.yaml"
@@ -171,6 +182,7 @@ jobs:
           fi
           kubectl -n docstral exec deployment/worker -- docstral-worker maintenance off --data-dir /app/data
           printf 'Published corpus: %s. No ingestion or schedule was triggered.\n' "$published" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Public endpoint: https://%s/mcp. Verify DNS, certificate and OAuth separately; pod rollout does not prove public readiness.\n' "$MCP_PUBLIC_HOSTNAME" >> "$GITHUB_STEP_SUMMARY"
       - name: Report failure without releasing maintenance
         if: failure()
         run: |

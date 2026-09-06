@@ -636,6 +636,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
+    { name = "starlette" },
 ]
 
 [package.metadata]
@@ -644,6 +645,7 @@ requires-dist = [
     { name = "fastmcp", specifier = "==4.0.2" },
     { name = "pydantic", extras = ["email"] },
     { name = "pydantic-settings" },
+    { name = "starlette" },
 ]
 
 [[package]]
