@@ -24,16 +24,6 @@ jobs:
       - name: Validate GitHub workflows
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
 
-      - name: Validate Kubernetes manifests
-        run: |
-          kubectl kustomize deployment/kubernetes > "$RUNNER_TEMP/runtime.yaml"
-          kubectl kustomize deployment/kubernetes/migration > "$RUNNER_TEMP/migration.yaml"
-          cp deployment/kubernetes/namespace.yaml "$RUNNER_TEMP/namespace.yaml"
-          docker run --rm -v "$RUNNER_TEMP:/manifests:ro" \
-            ghcr.io/yannh/kubeconform@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c \
-            -strict -summary -kubernetes-version 1.35.0 \
-            /manifests/runtime.yaml /manifests/migration.yaml /manifests/namespace.yaml
-
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
@@ -43,6 +33,43 @@ jobs:
 
       - name: Install the locked workspace
         run: uv sync --locked --all-packages
+
+      - name: Validate Kubernetes manifests
+        env:
+          MCP_PUBLIC_HOSTNAME: mcp.example.com
+          MCP_PUBLIC_IP_NAME: example-mcp-ip
+          MCP_TLS_CERT_NAME: example-mcp-cert
+          MCP_TLS_POLICY_NAME: example-mcp-tls
+        run: |
+          set -euo pipefail
+          cp -R deployment/kubernetes "$RUNNER_TEMP/runtime-base"
+          bash deployment/render-public.sh < deployment/kubernetes/gateway.yaml > "$RUNNER_TEMP/runtime-base/gateway.yaml"
+          kubectl kustomize "$RUNNER_TEMP/runtime-base" > "$RUNNER_TEMP/runtime.yaml"
+          kubectl kustomize deployment/kubernetes/migration > "$RUNNER_TEMP/migration.yaml"
+          cp deployment/kubernetes/namespace.yaml "$RUNNER_TEMP/namespace.yaml"
+          cp deployment/kubernetes/public-deployer-rbac.yaml "$RUNNER_TEMP/public-deployer-rbac.yaml"
+          mkdir -p "$RUNNER_TEMP/schemas"
+          # Convert official CRDs, pinned by revision, using kubeconform's converter.
+          curl --fail --silent --show-error --max-time 30 \
+            https://raw.githubusercontent.com/yannh/kubeconform/e65429b1e5990dd019ebb7b5642dcd22a3e9cd13/scripts/openapi2jsonschema.py \
+            -o "$RUNNER_TEMP/openapi2jsonschema.py"
+          cd "$RUNNER_TEMP/schemas"
+          gateway=https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/477d172e6ac5eccb82b65781ddb8f924afec4170/config/crd/standard
+          gke=https://raw.githubusercontent.com/GoogleCloudPlatform/gke-gateway-api/19cb314590d2a1baed786f68f4012f70d1dc3b88/config/crd
+          for source in \
+            "$gateway/gateway.networking.k8s.io_gateways.yaml" \
+            "$gateway/gateway.networking.k8s.io_httproutes.yaml" \
+            "$gke/networking.gke.io_gcpgatewaypolicies.yaml" \
+            "$gke/networking.gke.io_gcpbackendpolicies.yaml" \
+            "$gke/networking.gke.io_healthcheckpolicies.yaml"; do
+            curl --fail --silent --show-error --max-time 30 "$source" -o crd.yaml
+            DENY_ROOT_ADDITIONAL_PROPERTIES=1 "$GITHUB_WORKSPACE/.venv/bin/python" "$RUNNER_TEMP/openapi2jsonschema.py" crd.yaml
+          done
+          docker run --rm -v "$RUNNER_TEMP:/manifests:ro" \
+            ghcr.io/yannh/kubeconform@sha256:85dbef6b4b312b99133decc9c6fc9495e9fc5f92293d4ff3b7e1b30f5611823c \
+            -strict -summary -kubernetes-version 1.35.0 \
+            -schema-location default -schema-location '/manifests/schemas/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json' \
+            /manifests/runtime.yaml /manifests/migration.yaml /manifests/namespace.yaml /manifests/public-deployer-rbac.yaml
 
       - name: Lint
         run: uv run --no-sync ruff check .
