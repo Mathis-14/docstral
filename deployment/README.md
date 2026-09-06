@@ -76,6 +76,12 @@ never paste secret values into command arguments or logs.
 | Secret `mcp-google` | `DOCSTRAL_GOOGLE_CLIENT_ID`, `DOCSTRAL_GOOGLE_CLIENT_SECRET`, `DOCSTRAL_ALLOWED_EMAILS`, `DOCSTRAL_OAUTH_SIGNING_KEY` |
 | ConfigMap `runtime` | `DEPLOYMENT_NAME` (unique to this worker environment), `DOCSTRAL_OAUTH_BASE_URL` |
 
+Optional: set `DOCSTRAL_ANSWER_MODEL` in ConfigMap `runtime` to override
+`ministral-8b-2512`. Run `kubectl -n docstral edit configmap runtime`, then
+`kubectl -n docstral rollout restart deployment/mcp` and check its rollout status.
+Do this outside ingestion/deployment; expect a brief MCP interruption. No image
+build or re-ingestion is needed; deployments preserve this operator-owned setting.
+
 For the first port-forward test, use `http://localhost:8000` as the OAuth origin
 and `http://localhost:8000/auth/callback` as Google's authorized redirect URI.
 Keep the signing key stable and at least 32 characters long; see the

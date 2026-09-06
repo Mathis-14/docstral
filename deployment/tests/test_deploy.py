@@ -183,6 +183,12 @@ def test_runtime_wiring_preserves_publication_and_auth(tmp_path: Path) -> None:
     mcp = resources["Deployment", "mcp"]["spec"]["template"]["spec"]
     assert mcp["automountServiceAccountToken"] is False
     assert mcp["containers"][0]["args"][:2] == ["--auth", "google"]
+    env = {entry["name"]: entry for entry in mcp["containers"][0]["env"]}
+    assert env["DOCSTRAL_ANSWER_MODEL"]["valueFrom"]["configMapKeyRef"] == {
+        "name": "runtime",
+        "key": "DOCSTRAL_ANSWER_MODEL",
+        "optional": True,
+    }
     assert mcp["volumes"][0]["persistentVolumeClaim"]["claimName"] == "mcp-auth"
     worker = resources["Deployment", "worker"]["spec"]["template"]["spec"]
     assert (
