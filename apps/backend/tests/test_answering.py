@@ -143,6 +143,24 @@ async def test_answer_abstains_without_calling_chat_when_no_chunks() -> None:
     assert chat.calls == 0
 
 
+async def test_answer_keeps_technical_url_separate_from_source_citation() -> None:
+    endpoint = "https://api.example.test/v1"
+    chunk = _chunk("chunk-1", f"{DOCS}/guide", "Guide", f"Use base_url={endpoint}")
+    chat = _FakeChat(_AnswerDraft(answer=endpoint, evidence_ids=("E1",)))
+
+    response = await DocumentationAnswerer(
+        _FakeRetriever((chunk,)), chat, top_k=1
+    ).answer("Which base_url should I use?")
+
+    assert response.answer == endpoint
+    assert [str(citation.url) for citation in response.citations] == [f"{DOCS}/guide"]
+    assert chat.messages is not None
+    prompt = chat.messages[0].content
+    assert isinstance(prompt, str)
+    assert "Technical URLs from the evidence are allowed" in prompt
+    assert "Do not write citation links or evidence IDs in the answer text" in prompt
+
+
 async def test_answer_uses_fixed_abstention_for_model_abstention() -> None:
     chunk = _chunk("chunk-1", f"{DOCS}/page", "Page", "Content")
     chat = _FakeChat(_AnswerDraft(answer="", evidence_ids=()))
@@ -154,6 +172,10 @@ async def test_answer_uses_fixed_abstention_for_model_abstention() -> None:
     assert response.answer == EXPECTED_ABSTENTION
     assert response.abstained is True
     assert response.citations == ()
+    assert chat.messages is not None
+    prompt = chat.messages[0].content
+    assert isinstance(prompt, str)
+    assert '{"answer": "", "evidence_ids": []}' in prompt
 
 
 async def test_answer_rejects_unknown_evidence() -> None:
