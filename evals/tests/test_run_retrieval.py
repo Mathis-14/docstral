@@ -115,6 +115,9 @@ async def test_runner_queries_sequentially_and_writes_complete_artifacts(
     assert manifest.negative_count == 1
     assert manifest.search_toolkit_version == "0.0.13"
     assert manifest.embedding_model == "mistral-embed"
+    legacy_manifest = manifest.model_dump()
+    del legacy_manifest["query_delay_seconds"]
+    assert RunManifest.model_validate(legacy_manifest).query_delay_seconds is None
     positive_rows = tuple(
         PositiveRetrievalResult.model_validate_json(line)
         for line in (config.output_dir / "positive_results.jsonl")

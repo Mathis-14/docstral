@@ -138,7 +138,8 @@ class RunManifest(BaseModel):
     embedding_model: str
     top_k: int
     cutoffs: tuple[int, ...]
-    query_delay_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    # The initial archived run predates this field; absence means unknown, not zero.
+    query_delay_seconds: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     positive_count: int
     negative_count: int
 
