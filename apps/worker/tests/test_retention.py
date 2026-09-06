@@ -6,7 +6,7 @@ from docstral_worker.snapshot import write_snapshot
 from test_snapshot import CRAWLED_AT, failed, result, sitemap, stored
 
 
-def test_retention_preserves_current_published_and_unrecognised_paths(
+def test_retention_preserves_current_and_unrecognised_paths(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "snapshots"
@@ -38,9 +38,11 @@ def test_retention_preserves_current_published_and_unrecognised_paths(
     (unknown / "keep").write_text("keep")
     # Even a symlink inside a recognised, expired snapshot cannot remove its target.
     (complete[1] / "external").symlink_to(outside, target_is_directory=True)
+    # Current is protected even when it is outside the two newest snapshots.
+    (root / "current").write_text(complete[0].name)
     pointer = (root / "current").read_bytes()
 
-    prune_snapshots(root, published=complete[0].name)
+    prune_snapshots(root)
 
     assert [path.exists() for path in complete] == [True, False, False, True, True]
     assert [path.exists() for path in failures] == [False, False, True]

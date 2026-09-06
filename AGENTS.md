@@ -272,3 +272,28 @@ never rewrite history. -->
   reject an OAuth-origin mismatch before maintenance, and disable load balancer
   access logs to avoid recording authorization codes. Pod readiness does not
   prove public TLS or Q&A readiness; certificate issuance does not hold maintenance.
+- D023 — Keep the incremental ingestion engine article-based: extract locally,
+  compare fingerprints of Markdown, title and processing settings, then use the
+  existing Toolkit components only for changed articles. Why: routine refreshes
+  should skip unchanged embeddings and writes and should not control serving
+  runtimes. Record fingerprints only after confirmed indexing, mark mutations
+  pending beforehand, and derive removals from a complete crawl inventory.
+  Extraction failures remain explicit partial results without a percentage
+  threshold. Stage artifacts use public Toolkit serialization and typed,
+  versioned references on the snapshot volume; a new run recrawls rather than
+  reusing old artifacts. The existing Markdown-only citation hash is unchanged.
+- D024 — Keep hourly ingestion independent of application deployment: replace
+  D017/D019 with six native Mistral activities, `crawl`, `extract`,
+  `compare_hashes`, `split`, `embed`, and `index_delta`. Why: documentation
+  changes must leave MCP running and require embeddings only for changed
+  articles. Remove the worker's publication command and Kubernetes controls;
+  use the Toolkit's per-article replacement, accepting that the article being
+  updated may briefly be absent or partial. Each activity holds the volume
+  lock, checks maintenance and rejects stale snapshot/state references. Keep
+  one attempt per activity, dependency retries, 20-second heartbeats and a
+  shared 50-minute deadline. Input remains `{}`; startup never enables a
+  schedule. Image deployment still owns runtime rollout and maintenance, and
+  starts MCP after migration independently of ingestion, superseding D020's
+  publication-dependent bootstrap. Refuse an interrupted legacy publication
+  until it is completed with the previous release. Retention protects current
+  plus the two latest complete snapshots and latest failed snapshot.

@@ -1,4 +1,10 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: worker
+automountServiceAccountToken: false
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: worker-data
@@ -27,6 +33,7 @@ spec:
         app: worker
     spec:
       serviceAccountName: worker
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 120
       securityContext:
         runAsUser: 1000
@@ -46,10 +53,6 @@ spec:
                 secretKeyRef: {name: mistral, key: MISTRAL_API_KEY}
             - {name: DOCSTRAL_DATA_DIR, value: /app/data}
             - {name: VESPA_ENDPOINT, value: "http://vespa:8080"}
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef: {fieldPath: metadata.namespace}
-            - {name: MCP_DEPLOYMENT, value: mcp}
             - name: DEPLOYMENT_NAME
               valueFrom:
                 configMapKeyRef: {name: runtime, key: DEPLOYMENT_NAME}

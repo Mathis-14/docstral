@@ -6,4 +6,3 @@ resources:
   - worker.yaml
   - mcp.yaml
   - gateway.yaml
-  - worker-rbac.yaml

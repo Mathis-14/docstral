@@ -1,128 +1,139 @@
 # Updating the documentation indexed in Vespa
 
-The **corpus** is the documentation Docstral searches to answer questions.
-Vespa stores it in a collection named `docs`, as text chunks with citation
-metadata and embeddings.
-
-`publish` rebuilds this collection from the current HTML snapshot already on
-the worker's disk. It removes the old indexed chunks, then reuses the existing
-ingestion pipeline to extract Markdown, split it into chunks, generate new
-embeddings through Mistral, and index them in Vespa. Pages absent from the
-snapshot therefore disappear from the index.
-
-The MCP is stopped during the rebuild so it cannot answer from a half-written
-index. This is a documentation update, not a deployment of application code.
-It does not crawl, copy snapshots or embeddings from the Mac, create a cluster,
-or apply a Vespa migration. Local development still uses `make ingest`.
-
-## Prerequisites
-
-- A migrated, reachable Vespa application with the shared `docs` schema.
-- One MCP Deployment, with zero or one requested replica and no autoscaler.
-- A worker running inside Kubernetes, as UID/GID 1000, with a writable
-  persistent volume mounted at `/app/data`.
-- Its ServiceAccount can get/patch the named `deployments/scale`, get that
-  Deployment, and list its pods in the configured namespace.
-- `MISTRAL_API_KEY` injected into the worker, never passed as an argument.
-
-Set `VESPA_ENDPOINT`, `POD_NAMESPACE`, and `MCP_DEPLOYMENT` in the worker's
-environment. `DOCSTRAL_DATA_DIR` defaults to `/app/data`. The CLI also accepts
-`--vespa-endpoint`, `--namespace`, `--mcp-deployment`, and `--data-dir`.
-There is no fallback to local Kubernetes credentials or localhost Vespa.
-
-The data volume must contain an autonomous snapshot:
+The worker refreshes the `docs` corpus through one native Mistral workflow,
+`docstral-refresh`, with six sequential activities visible in Studio:
 
 ```text
-/app/data/snapshots/
-├── current                  # contains the successful snapshot directory name
-└── <UTC timestamp>/
-    ├── manifest.json
-    └── raw/*.html
+crawl → extract → compare_hashes → split → embed → index_delta
 ```
 
-## Manual update and recovery
+MCP stays running throughout ingestion. Only new, changed or pending articles
+are split, embedded and indexed. An unchanged hourly run makes no embedding
+request and no Vespa write. Kubernetes and image rollout belong to deployment;
+the worker has no Kubernetes controls or `publish` command.
 
-Inside the configured worker container:
+## Running the workflow
+
+The worker needs a migrated, reachable Vespa application, a writable persistent
+volume and these environment variables:
+
+- `VESPA_ENDPOINT`: internal Vespa endpoint.
+- `MISTRAL_API_KEY`: injected credential, never a command argument.
+- `DEPLOYMENT_NAME`: Mistral Workflows deployment identifier.
+- `DOCSTRAL_DATA_DIR`: worker data directory, default `/app/data`.
 
 ```sh
-docstral-worker publish
+docstral-worker workflows
 ```
 
-The command acquires the exclusive publication lock, verifies inventory and
-raw SHA-256 hashes, checks Vespa and the MCP Deployment, then scales MCP to zero
-and waits up to 120 seconds for its pods to disappear. Only then does it clear
-`docs` and run the existing splitter, embedder, and indexer. Other Vespa
-collections and the Vespa volume are untouched.
+The process registers the workflow and polls over an outbound connection. Start
+an execution with input `{}` in [AI Studio](https://console.mistral.ai/). Paths,
+endpoints and credentials come from the worker environment. The CLI enforces
+strict SDK trace redaction before importing Workflows.
 
-- Exit `0`: complete indexing; MCP requested back at one replica.
-- Exit `1`, page errors: indexing completed with at least one valid page;
-  MCP resumed, failed pages and totals logged explicitly.
-- Exit `1`, failed dependency or no indexed page: publication failed. If the
-  rebuild had started, MCP stays stopped with `.publication-pending` on the
-  volume. Repair the dependency or snapshot and run `publish` again.
-- Exit `2`: invalid CLI configuration.
+Startup never creates or enables a schedule. Configure hourly execution
+separately with interval `PT1H`, overlap `SKIP` and `pause_on_failure=True`.
+Verify a manual execution before enabling it. Operational failures pause future
+runs until recovery and manual resumption; partial extraction results do not.
+Monitor both execution results and schedule state in Studio.
 
-There is no automatic data rollback or unconditional MCP restart. Do not
-manually scale MCP up during a publication. The restart requests one replica;
-it does not certify HTTP readiness or answer quality.
+## What each activity does
 
-After a completed publication and restart request, retention keeps the latest
-two complete snapshots and latest failed snapshot, additionally protecting
-`current` and the published snapshot. Unknown directories and symlinks are
-left alone; Mac snapshots are not cleaned. Failed publication skips retention.
+| Activity | Behavior |
+| --- | --- |
+| `crawl` | Fetch a fresh, complete snapshot using the existing conditional requests and raw hashes. An incomplete crawl fails without changing the index. |
+| `extract` | Convert every stored page to Markdown locally. Record page-local conversion failures and preserve their previously indexed articles. |
+| `compare_hashes` | Compare Markdown, title and processing fingerprints against confirmed indexed state. Identify removals from the complete crawl inventory. |
+| `split` | Split changed articles with the existing Toolkit settings: 800 / 800 / 0. |
+| `embed` | Embed only those chunks with `mistral-embed`, 1024 dimensions and the existing six-retry policy. |
+| `index_delta` | Validate prepared documents, replace changed articles and delete disappeared articles through the Toolkit. Record each confirmed mutation. |
 
-## Deployment maintenance
+The indexing fingerprint covers the Markdown hash, title, splitter settings,
+Docstral pipeline version, Toolkit version and embedding model. HTML navigation
+changes that leave the extracted article unchanged do not trigger reindexing.
+The Markdown-only `content_hash` used by citations and evaluations is preserved.
+Increment `PipelineConfig.version` when extraction semantics change independently
+of the other fingerprinted settings.
 
-These operator commands are not MCP tools:
+The Toolkit replaces one article's chunks at a time. That article can briefly
+be absent or partial while being replaced; the remaining corpus stays available.
+This is not an atomic switch of the entire corpus. No activity clears `docs`,
+scales a process or applies a Vespa migration.
+
+## State, failures and retries
+
+`index-state.json` on the worker volume records each canonical URL, Toolkit
+document ID, last confirmed fingerprint and pending flag. If absent, comparison
+performs a one-time read-only inventory of existing Vespa sources; their unknown
+fingerprints require initial reindexing. Each mutation is marked pending before
+its API call, and confirmed only after it succeeds. Pending articles are retried
+even when their previous fingerprint matches.
+
+Extraction failures yield an explicit `partial` result, without a percentage
+threshold, including when all conversions fail. They never imply deletion.
+Removals always follow the complete, non-empty crawl inventory. Other preparation,
+persistence or dependency failures stop the execution explicitly. Preparation
+errors leave the served index untouched; a failed write may leave the affected
+article partial and pending.
+
+After fixing a failure, start a new `docstral-refresh` execution with `{}`. It
+performs a fresh crawl and reconciles pending state. There is no repair command
+or reuse of embeddings from a previous execution.
+
+Activities exchange typed snapshot and artifact references. Documents remain in
+`snapshots/<snapshot>/prepared/<stage>/documents.jsonl`, with versioned, hashed
+manifests finalized atomically. Serialization uses the Toolkit's public registry
+with `DocsChunkMetadata` registered explicitly. Incomplete, corrupt, incompatible
+or symbolic-link artifacts fail validation. These outputs support process changes
+between activities of the same execution; they are not a cross-run cache.
+
+Each activity holds the volume lock and rejects maintenance or stale snapshot
+and index-state references. Activities have one attempt each, 20-second
+heartbeats, a one-minute heartbeat timeout and a 55-minute SDK timeout. They
+share a cooperative 50-minute deadline including time between activities.
+Cancellation waits for a synchronous crawl to finish before releasing its lock.
+
+The final result contains article counts `indexed`, `failed`, `changed`,
+`unchanged`, `deleted`, and `status` (`complete` or `partial`). `failed` counts
+extraction failures. `duration_seconds` measures preparation and feeding,
+excluding crawl, scheduling and lock acquisition. Logs expose stage counters,
+extraction failure rate and confirmed page mutations. Successful completion
+retains two complete snapshots and one failed snapshot, additionally protecting
+`current`; artifacts follow their snapshot. Unknown paths and symlink targets
+are preserved.
+
+## Deployment maintenance and transition
 
 ```sh
 docstral-worker maintenance on --timeout 120
 docstral-worker maintenance off
 ```
 
-`on` waits for an active publication to finish, then persists `.maintenance`
-on the volume. Subsequent publications fail explicitly until `off`; the flag
-survives replacement of the worker pod. Both commands refuse an incomplete
-index: repair publication first. Never delete the lock file to bypass a run.
-Maintenance only blocks new publications; it does not stop MCP.
+Maintenance waits for the active activity to release its lock, then persists a
+flag that blocks later activities. It does not stop MCP. Image deployment owns
+runtime rollout and starts MCP after migration independently of ingestion; see
+[deployment instructions](../../deployment/README.md).
 
-## Mistral Workflows worker
+Before replacing the old single-activity workflow, suspend its schedule and
+finish or terminate old executions. If `.publication-pending` exists, complete
+that interrupted publication with the previous release first: the new worker
+refuses it explicitly. Never delete a lock or marker to bypass recovery. Deploy
+the new worker, run `{}` manually, verify all six activities and a subsequent
+unchanged run, then resume the hourly schedule.
 
-With the cluster prerequisites above and `DEPLOYMENT_NAME` set:
-
-```sh
-docstral-worker workflows
-```
-
-This registers `docstral-refresh` and polls Mistral for executions over an
-outbound connection. No public worker endpoint is needed. Start a manual
-execution with input `{}` in [AI Studio](https://console.mistral.ai/).
-The activity crawls fresh documentation and calls the existing publication
-pipeline under one lock. An incomplete crawl never republishes an old snapshot.
-Crawl failures leave the old index available. A failed rebuild leaves MCP
-stopped until repair with `publish`; there is no automatic rollback.
-The CLI enforces the SDK's strict trace redaction before importing Workflows.
-
-The output contains `indexed`, `failed`, and `duration_seconds` (indexing time).
-Page-local failures remain explicit partial results; dependency failures fail
-the execution. The activity has one attempt: it does not automatically repeat
-the full rebuild. Cancellation waits for a running synchronous crawl to finish
-before releasing its lock, and never starts publication afterwards.
-
-Starting this process does **not** create or activate a schedule. Mistral
-[schedules](https://docs.mistral.ai/studio/workflows/building-workflows/scheduling)
-are configured separately; hourly execution uses interval `PT1H` and overlap
-policy `SKIP`, with `pause_on_failure=True`. A failed execution pauses future
-runs until manual recovery and resumption; page-local partial results do not.
-Validate one manual execution on the deployed worker before enabling the schedule.
-Monitor executions and schedule state in AI Studio; email alerts are not configured.
+Local `crawl`, `extract` and `make ingest` retain their existing behavior.
+`make ingest` rebuilds local Vespa; it is not the cluster refresh entry point.
 
 ## Verification
 
 ```sh
-uv run pytest apps/worker/tests/test_publish.py apps/worker/tests/test_maintenance.py \
-  apps/worker/tests/test_kubernetes.py apps/worker/tests/test_retention.py \
-  apps/worker/tests/test_refresh.py apps/worker/tests/test_workflows.py
+uv run pytest apps/worker/tests deployment/tests
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest
+uv run pre-commit run --all-files
 ```
 
-Tests run with simulated external services, not against a live cluster.
+Unit tests replace external services at their HTTP boundaries; they do not
+operate a live cluster.

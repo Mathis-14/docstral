@@ -25,7 +25,6 @@ kubectl() {
     *"get deployment,statefulset,pvc"*) printf '%s\n' "$RESOURCES" ;;
     *"get deployment worker mcp"*) echo deployment/worker; echo deployment/mcp ;;
     *"get pods"*) echo pod/worker-old; echo pod/mcp-old ;;
-    *".published-snapshot"*) printf '%s\n' "$PUBLISHED" ;;
     "create -f"*) echo job/vespa-migrate-test ;;
     "kustomize "*) command kubectl "$@" ;;
   esac
@@ -50,7 +49,6 @@ def run_step(
             "PATH": os.environ["PATH"],
             "CALLS": str(calls),
             "FAIL_ON": "",
-            "PUBLISHED": "yes",
             "BOOTSTRAP": "false",
             "JOBS": '{"items": []}',
             "RESOURCES": '{"items": []}',
@@ -134,13 +132,37 @@ def test_preflight_rejects_existing_bootstrap_or_active_migration(
     assert "maintenance on" not in calls
 
 
-def test_old_pods_terminate_before_applying_resources(tmp_path: Path) -> None:
+@pytest.mark.parametrize("resource", ["roles", "rolebindings"])
+def test_missing_worker_cleanup_permission_does_not_stop_runtimes(
+    tmp_path: Path, resource: str
+) -> None:
+    result, calls = run_step(
+        "Preflight and acquire maintenance",
+        tmp_path,
+        FAIL_ON=f"auth can-i delete {resource}.rbac.authorization.k8s.io/worker",
+    )
+    assert result.returncode != 0
+    assert "requires delete permission" in result.stdout
+    assert "maintenance on" not in calls
+    assert "scale" not in calls
+    assert "delete rolebinding/worker" not in calls
+
+
+def test_permissions_are_checked_before_drain_and_cleanup(tmp_path: Path) -> None:
+    result, _ = run_step("Preflight and acquire maintenance", tmp_path)
+    assert result.returncode == 0, result.stderr
     result, calls = run_step(
         "Render immutable images and stop the application runtimes", tmp_path
     )
     assert result.returncode == 0, result.stderr
+    for resource in ("roles", "rolebindings"):
+        permission = f"auth can-i delete {resource}.rbac.authorization.k8s.io/worker"
+        assert calls.index(permission) < calls.index("maintenance on")
+    assert calls.index("maintenance on") < calls.index("--replicas=0")
     assert calls.index("--replicas=0") < calls.index("--for=delete")
-    assert calls.index("--for=delete") < calls.index("apply -f")
+    cleanup = "delete rolebinding/worker role/worker --ignore-not-found"
+    assert calls.index("--for=delete") < calls.index(cleanup)
+    assert calls.index(cleanup) < calls.index("apply -f")
 
 
 def test_failed_drain_prevents_apply(tmp_path: Path) -> None:
@@ -148,6 +170,16 @@ def test_failed_drain_prevents_apply(tmp_path: Path) -> None:
         "Render immutable images and stop the application runtimes",
         tmp_path,
         FAIL_ON="--for=delete",
+    )
+    assert result.returncode != 0
+    assert "apply -f" not in calls
+
+
+def test_failed_worker_permission_cleanup_prevents_apply(tmp_path: Path) -> None:
+    result, calls = run_step(
+        "Render immutable images and stop the application runtimes",
+        tmp_path,
+        FAIL_ON="delete rolebinding/worker",
     )
     assert result.returncode != 0
     assert "apply -f" not in calls
@@ -174,21 +206,19 @@ def test_failed_migration_does_not_start_worker(tmp_path: Path) -> None:
     assert "scale" not in calls
 
 
-@pytest.mark.parametrize("published", ["yes", "no"])
-def test_resume_requires_published_corpus(tmp_path: Path, published: str) -> None:
-    result, calls = run_step(
-        "Restore serving only for a published corpus", tmp_path, PUBLISHED=published
-    )
+def test_mcp_starts_without_a_corpus_marker(tmp_path: Path) -> None:
+    result, calls = run_step("Start MCP and release maintenance", tmp_path)
     assert result.returncode == 0, result.stderr
-    assert ("scale deployment/mcp" in calls) == (published == "yes")
-    assert "maintenance off" in calls
-    if published == "yes":
-        assert calls.index("rollout status") < calls.index("maintenance off")
+    assert "published-snapshot" not in calls
+    assert calls.index("scale deployment/mcp --replicas=1") < calls.index(
+        "rollout status"
+    )
+    assert calls.index("rollout status") < calls.index("maintenance off")
 
 
 def test_failed_mcp_rollout_keeps_maintenance(tmp_path: Path) -> None:
     result, calls = run_step(
-        "Restore serving only for a published corpus",
+        "Start MCP and release maintenance",
         tmp_path,
         FAIL_ON="rollout status",
     )
@@ -217,7 +247,7 @@ def test_kustomize_renders_the_migration_overlay(tmp_path: Path) -> None:
     assert pod["volumes"][0]["persistentVolumeClaim"]["claimName"] == "worker-data"
 
 
-def test_runtime_wiring_preserves_publication_and_auth(tmp_path: Path) -> None:
+def test_runtime_wiring_preserves_ingestion_and_auth(tmp_path: Path) -> None:
     result, _ = run_step(
         "Render immutable images and stop the application runtimes", tmp_path
     )
@@ -305,22 +335,18 @@ def test_runtime_wiring_preserves_publication_and_auth(tmp_path: Path) -> None:
         worker["serviceAccountName"]
         == resources["ServiceAccount", "worker"]["metadata"]["name"]
     )
+    assert worker["automountServiceAccountToken"] is False
+    assert (
+        resources["ServiceAccount", "worker"]["automountServiceAccountToken"] is False
+    )
+    assert ("Role", "worker") not in resources
+    assert ("RoleBinding", "worker") not in resources
+    worker_env = {entry["name"]: entry for entry in worker["containers"][0]["env"]}
+    assert "POD_NAMESPACE" not in worker_env
+    assert "MCP_DEPLOYMENT" not in worker_env
+    assert worker_env["DOCSTRAL_DATA_DIR"]["value"] == "/app/data"
+    assert worker_env["VESPA_ENDPOINT"]["value"] == "http://vespa:8080"
     assert worker["volumes"][0]["persistentVolumeClaim"]["claimName"] == "worker-data"
-    assert resources["Role", "worker"]["rules"] == [
-        {
-            "apiGroups": ["apps"],
-            "resources": ["deployments/scale"],
-            "resourceNames": ["mcp"],
-            "verbs": ["get", "patch"],
-        },
-        {
-            "apiGroups": ["apps"],
-            "resources": ["deployments"],
-            "resourceNames": ["mcp"],
-            "verbs": ["get"],
-        },
-        {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
-    ]
     for (kind, _), resource in resources.items():
         if kind == "Service":
             assert resource["spec"].get("type", "ClusterIP") == "ClusterIP"

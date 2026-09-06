@@ -45,7 +45,7 @@ async def refresh_snapshot(root: Path) -> None:
     try:
         result = await asyncio.shield(task)
     except asyncio.CancelledError:
-        # Threads cannot be cancelled: retain the publication lock until it finishes.
+        # Threads cannot be cancelled: retain the worker lock until it finishes.
         while not task.done():
             try:
                 await asyncio.shield(task)

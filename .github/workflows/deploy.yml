@@ -127,6 +127,12 @@ jobs:
           }
           # Check CRD discovery and namespace permissions before stopping anything.
           kubectl -n docstral get gateways,httproutes,gcpgatewaypolicies,gcpbackendpolicies,healthcheckpolicies -o name
+          kubectl -n docstral auth can-i delete roles.rbac.authorization.k8s.io/worker --quiet || {
+            echo '::error::Deployer requires delete permission on Role worker'; exit 1;
+          }
+          kubectl -n docstral auth can-i delete rolebindings.rbac.authorization.k8s.io/worker --quiet || {
+            echo '::error::Deployer requires delete permission on RoleBinding worker'; exit 1;
+          }
           kubectl -n docstral get jobs -o json | jq -e '
             [.items[] | select(.metadata.name | startswith("vespa-migrate-"))
               | select(any(.status.conditions[]?; .status == "True" and (.type == "Complete" or .type == "Failed")) | not)] | length == 0'
@@ -163,6 +169,7 @@ jobs:
           if [[ -n "$pods" ]]; then
             kubectl -n docstral wait --for=delete pods -l 'app in (worker,mcp)' --timeout=180s
           fi
+          kubectl -n docstral delete rolebinding/worker role/worker --ignore-not-found
           kubectl apply -f "$RUNNER_TEMP/runtime.yaml"
       - name: Migrate Vespa before starting the worker
         run: |
@@ -173,15 +180,12 @@ jobs:
           kubectl -n docstral rollout status statefulset/vespa --timeout=300s
           kubectl -n docstral scale deployment/worker --replicas=1
           kubectl -n docstral rollout status deployment/worker --timeout=300s
-      - name: Restore serving only for a published corpus
+      - name: Start MCP and release maintenance
         run: |
-          published=$(kubectl -n docstral exec deployment/worker -- sh -ec 'if test -f /app/data/.published-snapshot; then echo yes; else echo no; fi')
-          if [[ "$published" == yes ]]; then
-            kubectl -n docstral scale deployment/mcp --replicas=1
-            kubectl -n docstral rollout status deployment/mcp --timeout=300s
-          fi
+          kubectl -n docstral scale deployment/mcp --replicas=1
+          kubectl -n docstral rollout status deployment/mcp --timeout=300s
           kubectl -n docstral exec deployment/worker -- docstral-worker maintenance off --data-dir /app/data
-          printf 'Published corpus: %s. No ingestion or schedule was triggered.\n' "$published" >> "$GITHUB_STEP_SUMMARY"
+          printf 'MCP started. No ingestion or schedule was triggered.\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Public endpoint: https://%s/mcp. Verify DNS, certificate and OAuth separately; pod rollout does not prove public readiness.\n' "$MCP_PUBLIC_HOSTNAME" >> "$GITHUB_STEP_SUMMARY"
       - name: Report failure without releasing maintenance
         if: failure()

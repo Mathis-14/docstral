@@ -10,7 +10,7 @@
 - Crawl: `uv run docstral-worker crawl`
 - Extract: `uv run docstral-worker extract`
 - Ingest: `make ingest`
-- Cluster publication and maintenance: see [README.md](README.md).
+- Cluster refresh and maintenance: see [README.md](README.md).
 - Mistral Workflows polling worker: `docstral-worker workflows` (cluster configuration required).
 
 ## Rules
@@ -29,22 +29,42 @@
   reads the `current` raw snapshot and calls only Mistral embeddings and Vespa.
 - Keep indexing sequential. Continue after a page-local `IngestionError`, but
   stop the run when the splitter, embedding API, or Vespa fails.
+- The incremental engine extracts before comparing article fingerprints. Keep
+  `content_hash` as the Markdown hash; the indexing fingerprint also covers title
+  and processing settings. Only confirmed writes establish indexed fingerprints.
+  A pending article must be indexed again even when its previous hash matches.
+- Incremental removals use the complete crawl inventory, never the subset of
+  successfully extracted documents. Extraction failures are partial results
+  without a percentage threshold; other stage failures remain explicit errors.
+- Prepared artifacts use the Toolkit's public document serialization with an
+  explicit `DocsChunkMetadata` registration. Keep immutable, versioned stage
+  outputs on the snapshot volume and pass typed references between stages.
+  They are not a cache reused by a new ingestion execution.
 - Run local ingestion through `make ingest`, which rebuilds Vespa before feeding
   the complete current snapshot.
 - Pass each full Markdown page to the toolkit's standard splitter and keep
   citations at canonical-page URL granularity.
 - Keep `mistral-embed` and the Vespa schema explicitly aligned at 1024
   dimensions.
-- Cluster corpus replacement goes through `publish`, never `make ingest`.
-  Use the official Kubernetes SDK with in-cluster credentials only; do not
-  load an operator's kubeconfig or expose administration through MCP.
-- Publication and deployment maintenance share the worker volume lock.
-  Stop MCP before clearing `docs`, and keep it stopped after an incomplete
-  rebuild. A repair publication may proceed while the pending marker exists;
-  deployment maintenance may not bypass it.
-- Retention runs only through the cluster publication path. Preserve current
-  and published snapshots, unrecognised directories, and symlink targets.
-- The native Mistral Workflows activity reuses crawl and publication under one
-  volume lock. Keep all I/O in the activity; the workflow itself is deterministic.
-  Never create a schedule on worker startup or retry the whole rebuild implicitly.
-  Workflow inputs cannot select cluster endpoints, paths, or credentials.
+- Cluster refresh runs six native activities in order: crawl, extract,
+  compare_hashes, split, embed, index_delta. Keep the public `docstral-refresh`
+  input `{}`. All I/O belongs in activities; the workflow remains deterministic.
+- Ingestion never controls Kubernetes, clears the collection or stops MCP.
+  Use Toolkit replacement per article; a changed article can briefly be absent
+  or partial during its update. Image deployment owns runtime rollout.
+- Each activity holds the worker volume lock and verifies maintenance, current
+  snapshot identity and index-state revision before proceeding. Maintenance
+  persists between activities and worker replacements. An old
+  `.publication-pending` requires recovery with the previous release.
+- Keep one activity attempt, dependency retries, 20-second heartbeats and a
+  one-minute heartbeat timeout. Share one cooperative 50-minute deadline across
+  activities, with the SDK's 55-minute timeout on each. Await synchronous crawl
+  cancellation before releasing its lock.
+- SDK trace redaction does not sanitize logs. Filter Vespa cleanup exceptions
+  before console and OTel handlers receive them; preserve the event and workflow
+  correlation. Test both log bodies and attributes when feed and cleanup fail.
+- Retention runs after completed incremental indexing. Keep two complete
+  snapshots and one failed snapshot, additionally protecting current,
+  unrecognised directories and symlink targets.
+- Never create a schedule on worker startup. Workflow inputs cannot select
+  cluster endpoints, paths or credentials. Recovery starts a fresh execution.
