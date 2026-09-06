@@ -7,6 +7,8 @@ from fastmcp import FastMCP
 from fastmcp.server.middleware import AuthMiddleware
 from fastmcp.tools import ToolResult
 from pydantic import Field
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
 
 from docstral_mcp.auth import GoogleAuthConfig, build_google_provider
 
@@ -28,6 +30,11 @@ def create_server(
             "Present its answer and citations without adding factual content."
         ),
     )
+
+    @server.custom_route("/healthz", methods=["GET"], include_in_schema=False)
+    async def healthz(request: Request) -> PlainTextResponse:
+        """Report HTTP availability without calling paid or external dependencies."""
+        return PlainTextResponse("ok")
 
     @server.tool(
         name="ask_docs",

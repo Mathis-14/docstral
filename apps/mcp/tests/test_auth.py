@@ -116,6 +116,7 @@ def test_command_wires_google_and_disables_access_logs(
 
 async def _login(client: httpx2.AsyncClient) -> OAuthToken:
     """Exercise DCR, PKCE and consent over HTTP; only Google is simulated."""
+    origin = str(client.base_url).rstrip("/")
     redirect = "http://localhost:49152/callback"
     response = await client.post(
         "/register",
@@ -143,7 +144,7 @@ async def _login(client: httpx2.AsyncClient) -> OAuthToken:
             "code_challenge_method": "S256",
             "scope": SCOPES,
             "state": "client-state",
-            "resource": f"{ORIGIN}/mcp",
+            "resource": f"{origin}/mcp",
         },
     )
     assert response.status_code == 302, response.text
@@ -151,6 +152,10 @@ async def _login(client: httpx2.AsyncClient) -> OAuthToken:
     transaction = parse_qs(urlparse(consent_url).query)["txn_id"][0]
     response = await client.get(consent_url)
     assert response.status_code == 200
+    cookies = response.headers.get_list("set-cookie")
+    assert cookies
+    if origin.startswith("https://"):
+        assert all("Secure" in cookie and "HttpOnly" in cookie for cookie in cookies)
     csrf = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
     assert csrf is not None
     response = await client.post(
@@ -160,7 +165,7 @@ async def _login(client: httpx2.AsyncClient) -> OAuthToken:
     assert response.status_code == 302, response.text
     upstream = urlparse(response.headers["location"])
     assert upstream.hostname == "accounts.google.com"
-    assert parse_qs(upstream.query)["redirect_uri"] == [f"{ORIGIN}/auth/callback"]
+    assert parse_qs(upstream.query)["redirect_uri"] == [f"{origin}/auth/callback"]
     response = await client.get(
         "/auth/callback", params={"state": transaction, "code": "google-code"}
     )
@@ -175,13 +180,14 @@ async def _login(client: httpx2.AsyncClient) -> OAuthToken:
             "code": callback["code"][0],
             "redirect_uri": redirect,
             "code_verifier": verifier,
-            "resource": f"{ORIGIN}/mcp",
+            "resource": f"{origin}/mcp",
         },
     )
     assert response.status_code == 200, response.text
     return OAuthToken.model_validate(response.json())
 
 
+@pytest.mark.parametrize("origin", [ORIGIN, "https://mcp.example.com"])
 @pytest.mark.parametrize(
     ("email", "verified", "audience", "google_status", "permitted"),
     [
@@ -204,7 +210,11 @@ async def test_google_http_access_and_restart(
     audience: str,
     google_status: int,
     permitted: bool,
+    origin: str,
 ) -> None:
+    monkeypatch.setenv("DOCSTRAL_OAUTH_BASE_URL", origin)
+    oauth = GoogleAuthConfig()
+
     async def google(
         _transport: httpx2.AsyncHTTPTransport, request: httpx2.Request
     ) -> httpx2.Response:
@@ -245,11 +255,14 @@ async def test_google_http_access_and_restart(
     )
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(
-            transport=httpx2.ASGITransport(app=app), base_url=ORIGIN
+            transport=httpx2.ASGITransport(app=app), base_url=origin
         ) as client:
+            health = await client.get("/healthz")
+            assert health.status_code == 200
+            assert health.text == "ok"
             discovery = await client.get("/.well-known/oauth-authorization-server")
             assert discovery.status_code == 200
-            assert discovery.json()["authorization_endpoint"] == f"{ORIGIN}/authorize"
+            assert discovery.json()["authorization_endpoint"] == f"{origin}/authorize"
             for headers in ({}, {"Authorization": "Bearer invalid-token"}):
                 denied = await client.post("/mcp", json={}, headers=headers)
                 assert denied.status_code == 401
@@ -264,7 +277,7 @@ async def test_google_http_access_and_restart(
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app),
-            base_url=ORIGIN,
+            base_url=origin,
             headers={
                 "Authorization": f"Bearer {token.access_token}",
                 "Accept": "application/json, text/event-stream",
