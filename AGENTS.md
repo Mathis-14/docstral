@@ -55,6 +55,9 @@ tasks; update it when a durable convention or constraint is learned.
   with the test that would have caught it.
 - Integration tests carry the `integration` marker, are excluded from the unit
   suite, and fail explicitly when their service is missing.
+- Evaluation runners, tests, and type checks are local opt-in commands, outside
+  CI and production. Their versioned code and curated results document the
+  experiments; evaluation dependencies stay in the optional `eval` group.
 
 ## Workflow
 
@@ -69,6 +72,11 @@ tasks; update it when a durable convention or constraint is learned.
 4. Run proportionate checks and read their actual output.
 5. Report completed work, checks, assumptions, and unresolved decisions. Do
    not hide an incomplete check behind an unrelated successful one.
+6. Preserve evaluation attempts incrementally in local artifacts. Publish one
+   consolidated Notion page under Docstral when the full run is completed,
+   covering configuration, results, limitations, attempts and estimated cost;
+   do not publish intermediate retry reports. This is the agent's workflow,
+   not a dependency of the production service or evaluation scripts.
 
 ## Git and pull requests
 

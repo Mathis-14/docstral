@@ -100,7 +100,10 @@ no corpus or secrets. Mount worker data at `/app/data`; run local ingestion on
 the host. See [cluster publication](apps/worker/README.md) and
 [deployment](deployment/README.md). Cluster provisioning is separate.
 
-## Retrieval evaluation
+## Evaluation
 
-See [dataset, results and reproduction commands](evals/README.md).
-This evaluates retrieved evidence, not generated-answer quality.
+The [evaluation guide](evals/README.md) covers the reviewed development datasets,
+retrieval and Ragas metrics, and baseline reproduction commands.
+[Results](evals/RESULTS.md) compare the measured alternatives, timings,
+and limitations. Evaluations are local only, outside CI and production;
+experimental pipelines are not enabled in the application.
