@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from collections import Counter
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -15,10 +16,11 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from docstral_worker import IngestionError
 from docstral_worker.crawl import (
+    SHA256_PATTERN,
     CachedPage,
     CrawlCounts,
     CrawlEntry,
@@ -53,6 +55,15 @@ class SnapshotCollisionError(SnapshotWriteError):
     """Raised when a snapshot or raw-page path would collide."""
 
 
+class SnapshotRef(BaseModel):
+    """Identity of the complete snapshot shared between ingestion activities."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(pattern=r"^[0-9]{8}T[0-9]{6}Z$")
+    manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+
+
 class SnapshotManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -73,9 +84,14 @@ class SnapshotManifest(BaseModel):
 
 
 class CurrentSnapshot:
-    def __init__(self, directory: Path, manifest: SnapshotManifest) -> None:
+    def __init__(
+        self, directory: Path, manifest: SnapshotManifest, *, manifest_sha256: str
+    ) -> None:
         self.directory = directory
         self.manifest = manifest
+        self.reference = SnapshotRef(
+            name=directory.name, manifest_sha256=manifest_sha256
+        )
         self._pages = {
             page.canonical_url: page
             for page in manifest.pages
@@ -92,10 +108,11 @@ class CurrentSnapshot:
                 f"invalid raw metadata for {canonical_url!r}",
             )
         path = self.directory / _raw_path(canonical_url)
-        try:
-            body = path.read_bytes()
-        except OSError as exc:
-            raise SnapshotReadError(path, str(exc)) from exc
+        body = _read_regular_file(path)
+        if sha256(body).hexdigest() != page.raw_sha256:
+            raise SnapshotReadError(
+                path, "raw HTML integrity check failed: recorded SHA-256 does not match"
+            )
         return CachedPage(
             etag=page.etag,
             raw_sha256=page.raw_sha256,
@@ -106,12 +123,11 @@ class CurrentSnapshot:
 def current_snapshot(out: Path) -> CurrentSnapshot | None:
     """Return the snapshot named by ``current``."""
     pointer = out / CURRENT_FILE
+    _reject_symlinks(pointer)
     if not pointer.exists():
-        if pointer.is_symlink():
-            raise SnapshotReadError(pointer, "broken symbolic link")
         return None
     try:
-        name = pointer.read_text(encoding="utf-8").strip()
+        name = _read_regular_file(pointer).decode("utf-8").strip()
     except (OSError, UnicodeError) as exc:
         raise SnapshotReadError(pointer, str(exc)) from exc
     if _SUCCESSFUL_SNAPSHOT_NAME.fullmatch(name) is None:
@@ -120,12 +136,50 @@ def current_snapshot(out: Path) -> CurrentSnapshot | None:
     directory = out / name
     manifest_path = directory / MANIFEST_FILE
     try:
-        manifest = SnapshotManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
+        manifest_bytes = _read_regular_file(manifest_path)
+        manifest = SnapshotManifest.model_validate_json(manifest_bytes)
     except (OSError, UnicodeError, ValidationError) as exc:
         raise SnapshotReadError(manifest_path, str(exc)) from exc
-    return CurrentSnapshot(directory, manifest)
+    return CurrentSnapshot(
+        directory, manifest, manifest_sha256=sha256(manifest_bytes).hexdigest()
+    )
+
+
+def read_current_snapshot(
+    root: Path, expected: SnapshotRef | None = None
+) -> tuple[SnapshotRef, CurrentSnapshot]:
+    """Require a complete, non-empty snapshot matching the activity reference."""
+    snapshot = current_snapshot(root)
+    if snapshot is None:
+        raise SnapshotReadError(root / CURRENT_FILE, "No current snapshot")
+    if expected is not None and snapshot.reference != expected:
+        raise SnapshotReadError(
+            root / CURRENT_FILE, "Snapshot is obsolete or its manifest changed"
+        )
+    if snapshot.manifest.counts.failed or not snapshot.manifest.counts.stored:
+        raise SnapshotReadError(
+            snapshot.directory / MANIFEST_FILE,
+            "Incremental ingestion requires a complete, non-empty snapshot",
+        )
+    _reject_symlinks(snapshot.directory / "raw")
+    return snapshot.reference, snapshot
+
+
+def _reject_symlinks(path: Path) -> None:
+    if any(part.is_symlink() for part in (path, *path.parents)):
+        raise SnapshotReadError(path, "symbolic-link paths are not allowed")
+
+
+def _read_regular_file(path: Path) -> bytes:
+    _reject_symlinks(path)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise SnapshotReadError(path, "a regular snapshot file is required")
+            return stream.read()
+    except OSError as exc:
+        raise SnapshotReadError(path, str(exc)) from exc
 
 
 def write_snapshot(
