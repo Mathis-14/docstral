@@ -113,6 +113,9 @@ uv run --locked --all-packages --group eval --env-file .env \
 Runs the real backend at K=5: `mistral-embed` → `mistral-small-2603` answers →
 native Ragas `0.4.3` with `mistral-medium-3-5` judging. The eval dependency group
 is separate from the production runtime. No judge runs on negative answers.
+This historical baseline explicitly selects Small, independently of the MCP's
+configurable answer model. Keep the local evaluation index on the frozen corpus;
+do not refresh it during a run.
 
 Open **`summary.json`** for aggregate metrics and outcome counts. `answers.jsonl`
 contains verbatim answers, references, server-built citations, and actual chunks;
@@ -149,8 +152,8 @@ maintained replay command for every spike. Nothing in `data/` is copied into the
 package or imported by production.
 
 The `eval` dependency group is only needed for local Q&A evaluations and their
-checks. Default pytest and mypy commands cover application and shared-package
-code, not `evals`. Run evaluation checks explicitly on your machine:
+checks. Default pytest and mypy commands cover application, shared-package, and
+deployment code, not `evals`. Run evaluation checks explicitly on your machine:
 
 ```sh
 uv run --locked --all-packages --group eval pytest evals/tests

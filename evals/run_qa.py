@@ -294,7 +294,12 @@ async def run(config: QAConfig, *, resume: bool = False) -> None:
                 answers = await generate_answers(
                     cases,
                     answers,
-                    DocumentationAnswerer(recorder, MistralChat(client=sdk), top_k=5),
+                    DocumentationAnswerer(
+                        recorder,
+                        MistralChat(client=sdk),
+                        top_k=5,
+                        model=manifest.answer_model,
+                    ),
                     recorder,
                     trace,
                     config.output_dir,

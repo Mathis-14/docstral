@@ -225,7 +225,14 @@ async def test_full_workflow_records_invalid_output_then_judges_valid_answer(
         summary.retrieval is not None
         and summary.retrieval.overall[0].question_count == 2
     )
-    assert load_manifest(config).status == "completed"
+    manifest = load_manifest(config)
+    assert manifest.status == "completed"
+    assert manifest.answer_model == "mistral-small-2603"
+    assert {body["model"] for body in services.requests} == {
+        manifest.embedding_model,
+        manifest.answer_model,
+        manifest.judge_model,
+    }
     assert summary.processed_questions == 3
     assert summary.metrics["faithfulness"].mean == 1.0
     assert {path.name for path in config.output_dir.iterdir()} == {
