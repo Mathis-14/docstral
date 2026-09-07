@@ -2,6 +2,12 @@
 
 **Mistral documentation, one question away.**
 
+
+
+https://github.com/user-attachments/assets/20f86b44-8bfb-4ec7-b533-59fe5a7d9802
+
+
+
 Ask questions from Vibe or another MCP client. Docstral retrieves relevant
 passages and returns an English answer with sources built from retrieved chunks.
 
