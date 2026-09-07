@@ -4,17 +4,6 @@ metadata:
   name: worker
 automountServiceAccountToken: false
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: worker-data
-spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: standard-rwo
-  resources:
-    requests:
-      storage: 10Gi
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,7 +40,6 @@ spec:
             - name: MISTRAL_API_KEY
               valueFrom:
                 secretKeyRef: {name: mistral, key: MISTRAL_API_KEY}
-            - {name: DOCSTRAL_DATA_DIR, value: /app/data}
             - {name: VESPA_ENDPOINT, value: "http://vespa:8080"}
             - name: DEPLOYMENT_NAME
               valueFrom:
@@ -74,9 +62,3 @@ spec:
           resources:
             requests: {cpu: 500m, memory: 2Gi}
             limits: {memory: 3Gi}
-          volumeMounts:
-            - {name: data, mountPath: /app/data}
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: worker-data

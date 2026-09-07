@@ -1,7 +1,3 @@
-"""The fetch contract and its synchronous HTTP adapter stay together here.
-Retries, redirects, and cadence share the same client and request state.
-Robots parsing and URL admission remain in their dedicated modules."""
-
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -21,7 +17,7 @@ from docstral_worker.robots import (
     RobotsUnavailableError,
     load_robots,
 )
-from docstral_worker.urls import DOCS_HOST, is_docs_url
+from docstral_worker.urls import DOCS_HOST, canonicalize, is_docs_url
 
 USER_AGENT = "Docstral/0.1 (+https://github.com/Mathis-14/docstral)"
 MAX_ATTEMPTS = 3
@@ -80,8 +76,6 @@ class Fetcher(Protocol):
 
 
 class HttpFetcher:
-    """Synchronous, robots-aware HTTP implementation of Fetcher."""
-
     def __init__(
         self,
         config: FetchConfig | None = None,
@@ -90,6 +84,7 @@ class HttpFetcher:
         sleeper: Callable[[float], None] = sleep,
         clock: Callable[[], float] = monotonic,
         wall_clock: Callable[[], datetime] = _utc_now,
+        stop_at_new_page: bool = False,
     ) -> None:
         delay_seconds = (config or FetchConfig()).delay_seconds
         self._sleep = sleeper
@@ -106,6 +101,7 @@ class HttpFetcher:
         self._request_interval = delay_seconds
         self._configured_delay = delay_seconds
         self._last_request_at: float | None = None
+        self._stop_at_new_page = stop_at_new_page
 
     def __enter__(self) -> Self:
         self._client.__enter__()
@@ -123,11 +119,6 @@ class HttpFetcher:
         self._client.close()
 
     def fetch(self, url: str, etag: str | None) -> FetchResult:
-        """Fetch one URL.
-
-        The returned ETag belongs to ``final_url``. A 3xx ``status_code`` means
-        that ``final_url`` was not fetched and must be handled by admission.
-        """
         if not is_docs_url(url):
             raise FetchError(url, f"expected an HTTPS URL on {DOCS_HOST}")
         robots = self._ensure_robots()
@@ -136,7 +127,7 @@ class HttpFetcher:
         response, final_url = self._follow_redirects(
             url, headers, robots=robots, follow_external=False
         )
-        final_url_was_fetched = is_docs_url(final_url)
+        final_url_was_fetched = response.status_code not in REDIRECT_STATUSES
         return FetchResult(
             requested_url=url,
             final_url=final_url,
@@ -209,6 +200,13 @@ class HttpFetcher:
                 raise RedirectLimitError(url, f"more than {MAX_REDIRECTS} redirects")
             next_url = urljoin(current_url, location)
             if not follow_external and not is_docs_url(next_url):
+                return response, next_url
+            if (
+                robots is not None
+                and self._stop_at_new_page
+                and canonicalize(next_url, current_url).url
+                != canonicalize(url, url).url
+            ):
                 return response, next_url
             current_url = next_url
             request_headers = {}

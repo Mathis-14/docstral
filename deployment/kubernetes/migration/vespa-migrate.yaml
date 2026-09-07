@@ -26,7 +26,6 @@ spec:
           command: [sh, -ec]
           args:
             - |
-              docstral-worker maintenance on --data-dir /app/data
               app_dir=$(python -c 'from pathlib import Path; import docstral_vespa; print(Path(docstral_vespa.__file__).parent)')
               exec mistral-vespa migrate --app-dir "$app_dir" --config-server http://vespa-0.vespa.docstral.svc.cluster.local:19071
           securityContext:
@@ -36,9 +35,3 @@ spec:
           resources:
             requests: {cpu: 250m, memory: 256Mi}
             limits: {memory: 512Mi}
-          volumeMounts:
-            - {name: data, mountPath: /app/data}
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: worker-data

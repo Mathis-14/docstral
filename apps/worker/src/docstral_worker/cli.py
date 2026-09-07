@@ -43,7 +43,6 @@ class IngestConfig(BaseModel):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the Docstral worker command line interface."""
     parser = _parser()
     args = parser.parse_args(argv)
     _configure_logging()
@@ -51,7 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         os.environ.setdefault("LOG_FORMAT", "json")
         # SDK settings load on import; its default trace filter can expose errors.
         os.environ["OTEL_REDACTION"] = "strict"
-        from docstral_worker.workflows import run_worker
+        from docstral_worker.refresh.worker import run_worker
 
         try:
             asyncio.run(run_worker())
@@ -76,22 +75,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 vespa_endpoint=args.vespa_endpoint,
             )
         )
-    if args.command == "maintenance":
-        from docstral_worker.maintenance import WorkerState
-
-        try:
-            asyncio.run(
-                WorkerState(args.data_dir).set_maintenance(
-                    args.mode == "on",
-                    timeout=args.timeout,
-                )
-            )
-        except (IngestionError, OSError) as exc:
-            structlog.get_logger(__name__).error(
-                "maintenance_failed", error_message=str(exc)
-            )
-            return 1
-        return 0
     raise AssertionError("argparse accepted an unknown command")
 
 
@@ -221,18 +204,6 @@ def _parser() -> argparse.ArgumentParser:
         type=_http_endpoint,
         default=DEFAULT_VESPA_ENDPOINT,
         help="Vespa query and document endpoint",
-    )
-    maintenance_parser = commands.add_parser(
-        "maintenance", help="pause or resume ingestion"
-    )
-    maintenance_parser.add_argument("mode", choices=("on", "off"))
-    maintenance_parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=Path(os.environ.get("DOCSTRAL_DATA_DIR", "/app/data")),
-    )
-    maintenance_parser.add_argument(
-        "--timeout", type=_non_negative_float, default=120.0
     )
     return parser
 

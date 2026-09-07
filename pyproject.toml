@@ -42,7 +42,7 @@ plugins = ["pydantic.mypy"]
 python_version = "3.13"
 strict = true
 files = [
-    "deployment/tests",
+    "deployment",
     "apps/backend/src",
     "apps/backend/tests",
     "apps/mcp/src",
@@ -54,6 +54,7 @@ files = [
 ]
 
 [tool.pytest.ini_options]
+pythonpath = ["deployment"]
 testpaths = ["apps", "packages", "deployment/tests"]
 addopts = "-m 'not integration'"
 asyncio_mode = "auto"

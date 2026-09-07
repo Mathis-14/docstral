@@ -17,17 +17,12 @@ from docstral_worker.crawl import (
 from docstral_worker.extract import extract_page
 from docstral_worker.ingest import (
     DocsChunkMetadata,
-    PipelineConfig,
     build_pipeline,
-    build_splitter,
-    extract_documents,
     ingest_snapshot,
-    validate_documents,
 )
 from docstral_worker.sitemap import SitemapSnapshot
 from docstral_worker.snapshot import (
     CurrentSnapshot,
-    SnapshotReadError,
     current_snapshot,
     write_snapshot,
 )
@@ -211,70 +206,6 @@ async def test_ingest_snapshot_records_page_failure_and_continues(
         and log.get("url") == f"{DOCS}/invalid"
         for log in logs
     )
-
-
-async def test_staged_extraction_preserves_pipeline_documents(tmp_path: Path) -> None:
-    html = _html("Long", "word " * 2_000)
-    snapshot = _write_current_snapshot(tmp_path, ("/long", html))
-    config = PipelineConfig()
-    documents, failed = await extract_documents(snapshot, config)
-    assert failed == 0
-    assert len(documents) == 1
-    validate_documents(documents, embedded=False)
-    split = await build_splitter(config).process(documents[0])
-    staged = await _FakeEmbedder().process(split)
-    validate_documents([staged], embedded=True)
-
-    url = f"{DOCS}/long"
-    baseline = await build_pipeline(
-        index=_MemoryIndex(), embedder=_FakeEmbedder()
-    ).run_file(File(path=url, name="long.html", raw=html, source_id=url))
-
-    assert staged == baseline
-
-
-@pytest.mark.parametrize("all_failed", [False, True])
-async def test_staged_extraction_counts_conversion_errors(
-    tmp_path: Path, all_failed: bool
-) -> None:
-    pages = [("/invalid", b"\xff")]
-    if not all_failed:
-        pages.append(("/good", _html("Good", "Evidence")))
-    snapshot = _write_current_snapshot(tmp_path, *pages)
-
-    with capture_logs() as logs:
-        documents, failed = await extract_documents(
-            snapshot, PipelineConfig(version="next")
-        )
-
-    assert failed == 1
-    assert len(documents) == (0 if all_failed else 1)
-    assert all(document.metadata.pipeline_version == "next" for document in documents)
-    assert any(
-        log.get("event") == "refresh_page_failed"
-        and log.get("snapshot") == snapshot.directory.name
-        and log.get("stage") == "extract"
-        and log.get("url") == f"{DOCS}/invalid"
-        and log.get("error_code") == "extraction_failed"
-        for log in logs
-    )
-
-
-@pytest.mark.parametrize("kind", ["corrupt", "symlink"])
-async def test_staged_extraction_does_not_count_snapshot_corruption_as_conversion_error(
-    tmp_path: Path, kind: str
-) -> None:
-    snapshot = _write_current_snapshot(tmp_path, ("/guide", _html("Guide", "Body")))
-    raw = snapshot.directory / "raw" / "guide.html"
-    if kind == "corrupt":
-        raw.write_bytes(b"Modified")
-    else:
-        target = tmp_path / "target.html"
-        raw.rename(target)
-        raw.symlink_to(target)
-
-    with pytest.raises(SnapshotReadError):
-        await extract_documents(snapshot, PipelineConfig())
 
 
 async def test_ingest_snapshot_stops_on_external_failure(tmp_path: Path) -> None:

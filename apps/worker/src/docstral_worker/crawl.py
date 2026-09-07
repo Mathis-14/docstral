@@ -1,9 +1,3 @@
-"""Run the sequential frontier and build its complete audit result.
-
-HTTP transport and the page cache stay behind the small boundaries imported by this
-module.
-"""
-
 from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -188,7 +182,6 @@ def crawl(
     *,
     max_pages: int = MAX_PAGES,
 ) -> CrawlResult:
-    """Crawl sitemap seeds and their in-scope links sequentially."""
     if not 1 <= max_pages <= MAX_PAGES:
         raise ValueError(f"max_pages must be between 1 and {MAX_PAGES}")
     started_at = monotonic()
@@ -293,7 +286,7 @@ def _consume(
         )
         return
     body, etag = _response_body(final.url, result, cached)
-    links, malformed = _extract_links(body, final.url)
+    links, malformed = extract_links(body, final.url)
     state.malformed_links += malformed
     state.record(_stored(candidate, result, final.url, body, etag), duration_seconds)
     for link in links:
@@ -325,7 +318,7 @@ def _rejection_reason(
     return None
 
 
-def _extract_links(body: bytes, base: str) -> tuple[tuple[CanonicalUrl, ...], int]:
+def extract_links(body: bytes, base: str) -> tuple[tuple[CanonicalUrl, ...], int]:
     try:
         soup = BeautifulSoup(body, "html.parser")
     except ParserRejectedMarkup as exc:
