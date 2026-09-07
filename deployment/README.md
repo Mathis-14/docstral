@@ -14,7 +14,7 @@ Mistral Workflows <-------- worker ---------> Vespa
 | Service | CPU request | RAM request / limit | Persistent disk |
 | --- | --- | --- | --- |
 | Vespa | 2 | 6 / 8 GiB | 20 GiB: data and logs |
-| Worker | 0.5 | 2 / 3 GiB | 10 GiB: snapshots, prepared articles and indexed state |
+| Worker | 0.5 | 2 / 3 GiB | None |
 | MCP | 0.25 | 0.5 / 1 GiB | 1 GiB: encrypted OAuth state |
 
 Initial sizing, to measure during real ingestion. Disks survive pod replacement;
@@ -93,26 +93,34 @@ build or re-ingestion is needed; deployments preserve this operator-owned settin
 
 Complete the one-time [public HTTPS setup](https.md) before deploying this release.
 Use `https://<MCP_PUBLIC_HOSTNAME>` as the OAuth origin; deployment rejects a
-mismatch before maintenance. Keep the signing key stable and at least 32
+mismatch before pausing schedules. Keep the signing key stable and at least 32
 characters long. See [MCP setup](../README.md#google-oauth-invited-users) for invitations.
 
 ## Deploy and test
 
-Pause any existing ingestion schedule before updating. Use this workflow, not
-direct manifest application, to preserve ingestion and maintenance guards.
+Use the deployment workflow to drain old executions before migration. Do not
+start manual refreshes or resume scheduling during deployment. Pausing a schedule
+does not block manual API triggers; operators must respect this deployment window.
+
+The workflow keeps its deployment tooling at the workspace root and checks out
+the selected release separately under `release/`. Manifests and migrations come
+from that release; the drain script comes from the workflow revision. Releases
+that still use `maintenance.py` leave maintenance only after MCP rollout succeeds.
+Schedules stay paused in both cases.
 
 1. Publish a stable `vX.Y.Z` release containing these manifests. Wait for **both**
    image workflows to succeed.
 2. Run **Deploy to GKE** from `main`. Leave `release` empty for the latest stable
    release, or select a specific tag. Check `bootstrap` only on the first run,
    before any workloads or persistent volumes exist in the namespace.
-3. The workflow verifies paired image revisions, enters maintenance, stops MCP
-   and worker, removes the worker's old Kubernetes permissions, migrates Vespa,
-   then starts worker and MCP. An empty corpus returns the usual abstention;
-   MCP startup does not wait for ingestion. Failure never automatically clears
-   maintenance. Ingestion itself leaves both runtimes running.
+3. The workflow verifies paired images, pauses the refresh schedules for the
+   deployment and waits up to 20 minutes for its old executions to finish. The
+   old worker keeps running during that wait. A timeout refuses migration. It
+   then stops MCP and worker, waits for their pods to terminate, removes legacy
+   worker permissions, migrates Vespa and starts both runtimes. Paused schedules are
+   never resumed automatically after success or failure.
 4. Trigger `docstral-refresh` manually in AI Studio with `{}`. The first run
-   reconciles the existing corpus and initializes the indexed-page registry;
+   reconciles the existing corpus and confirms pages in Vespa;
    subsequent runs update only added or changed articles and delete absent ones.
    Keep scheduling disabled until the refresh and Vibe test succeed. See
    [worker operations](../apps/worker/README.md).
@@ -134,11 +142,14 @@ Inspect the failed Actions step and `kubectl -n docstral logs job/<job-name>`.
 Do not delete volumes or indexed state. If the worker was stopped, fix
 its configuration/image and scale it to one replica before retrying deployment.
 For failed ingestion, start a fresh `docstral-refresh` invocation with `{}`;
-pending articles are retried against the new crawl. For an interrupted legacy
-publication, follow [worker recovery](../apps/worker/README.md) before deploying.
+unconfirmed pages are repaired from current HTML. Complete any interrupted
+legacy publication with its original release before this migration. The new
+worker does not consume the old local markers or snapshots.
 Keep `bootstrap` checked only if no
 runtime resources or PVCs were created; otherwise uncheck it on retry.
-Maintenance is released only on success.
+Resume scheduling only after a successful fresh refresh and unchanged run.
+The worker no longer mounts `worker-data`; deployment does not delete an existing
+PVC, so historical snapshots remain available for operator inspection.
 
 Rate limiting, backups and availability beyond one node remain separate work.
 Reference: [Vespa persistence](https://docs.vespa.ai/en/operations/self-managed/docker-containers.html),
