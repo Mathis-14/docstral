@@ -1,14 +1,78 @@
-# Evaluation results
+# Historical evaluation results
 
-**The exploratory alternatives are not enabled in the baseline.** Listwise
-reranking gives the strongest measured retrieval improvement: complete evidence
-for **61/62 rather than 52/62** questions at five chunks. It does **not** establish
-better overall answers or safe abstention. This is an evaluation PR: the findings
-support a separate pipeline decision, not an implemented reranker or MCP redesign.
+These measurements describe September 2026 development experiments, not the
+current production pipeline. The old runners have been removed; the current
+manual evaluation command is in [README.md](README.md). Reproducing these
+historical runs requires their original code and local artifacts.
 
-[README.md](README.md) defines the datasets, metrics, maintained commands, and
-versioned/local boundary. All measurements below use the known development set;
-none establish unseen-set performance.
+Listwise reranking gave the strongest measured retrieval improvement: complete
+evidence for **61/62 rather than 52/62** Q&A questions at five chunks. This did
+not establish better overall answers or safe abstention. None of these
+development-set measurements establishes unseen-set performance.
+
+## Historical dataset and protocol
+
+Snapshot `20260903T120924Z`: 332 stored pages, 331 convertible/indexed pages,
+785 chunks. Search Toolkit and Vespa plugin `0.0.13`; Markdown splitting
+800/800/0; chunk content embedded with `mistral-embed`, 1024 dimensions.
+Vespa receives query text and embedding, with lexical ranking weights at zero:
+hybrid candidate selection, dense ranking.
+
+| Input | Purpose |
+| --- | --- |
+| [retrieval_dev_v1.jsonl](datasets/retrieval_dev_v1.jsonl) | 62 English positives, 73 required evidence groups; 11 multi-group questions. |
+| [retrieval_negatives_v1.jsonl](datasets/retrieval_negatives_v1.jsonl) | 10 questions not answerable from the corpus; inspected separately. |
+| [qa_dev_v1.jsonl](datasets/qa_dev_v1.jsonl) | 62 positives with reviewed reference answers, plus 10 negatives. |
+
+Questions were drafted before retrieval, then evidence was reviewed. The set
+includes 15 precise/natural pairs, vague/noisy formulations, and two builder
+cases. Two retrieval golds were corrected after the first run. Q&A V1 retains
+the retrieval golds but changes questions 005/006 from Magistral to Mistral Small
+and clarifies negative-001's justification. Additional Q&A reference evidence
+does not expand retrieval gold. The original retrieval files remain unchanged.
+
+This is a **reviewed, frozen development set, not an unseen holdout**: repeated
+experiments informed variant selection. Freezing prevents silent changes, not
+development-set overfitting. References and golds never enter generation or
+reranking inputs.
+
+Evidence is checked against local Markdown. Each required group has alternative
+excerpts: any alternative satisfies the group; all groups are required for
+complete coverage. Matching requires source URL, content hash, and an exact
+excerpt inside a retrieved chunk. Cut to K chunks **before** scoring; preserve
+duplicate sources and original ranks. An unannotated equivalent passage can
+therefore be useful without matching the gold.
+
+### Historical metrics
+
+| Metric | Meaning |
+| --- | --- |
+| Evidence recall, macro | Mean fraction of required groups covered per positive question. |
+| Evidence recall, micro | Total covered groups / total required groups. |
+| All required | Fraction of positives with every group covered. |
+| MRR | Mean reciprocal rank of the first matching chunk; zero if absent. |
+| Source hit | Fraction with a gold page retrieved, even without the exact passage. |
+| Duplicate-source rate | Mean `1 - unique sources / returned chunks`; zero for empty results. |
+| Ragas Faithfulness | Answer claims supported by the retrieved context supplied to the judge. |
+| Ragas FactualCorrectness F1 / recall | Claim agreement with the reviewed reference; high atomicity and coverage. |
+
+The archived retrieval runner measured positives at K=1/3/5/10;
+the archived Q&A runner used five chunks, reporting K=1/3/5. Ragas means include
+**scored positive answers only**. Errors, skipped/undefined scores, and pending work stay
+visible; no infrastructure error becomes a zero. Positive and negative
+abstentions are counted separately. An invalid structured answer is not an
+abstention, and a valid answer is not necessarily correct.
+
+F1 is reference-relative, not a percentage of correct answers: supported extra
+details can lower it. The archived runner supplied raw chunk contents to
+Faithfulness; later local experiments supplied the generator's exact JSON
+evidence, including titles/labels. Their scores are not directly interchangeable.
+
+**Not established:** Precision@K, MAP, and nDCG lack exhaustive/graded relevance
+labels here. Semantic citation support, answer relevance, a validated abstention
+threshold, and unseen-set performance are not established. Citation membership
+only proves that a cited chunk was supplied. Manual inspection and targeted SDK
+checks complement, rather than replace, the automated metrics.
 
 ## 1. Retrieval baseline and hybrid controls
 
@@ -54,7 +118,7 @@ The initial full attempt stopped before judging and is excluded. The completed
 runs below used Small 2603 answers and native Ragas with Medium 3.5 judging.
 The prompt clarification made product/API/client identity explicit, allowed
 technical URLs, specified the abstention shape, and requested complete snippets.
-This is the existing baseline prompt fix, separate from exploratory pipelines.
+This was the baseline prompt fix, separate from exploratory pipelines.
 
 | Q&A run | Scored positives | Faithfulness | Factual F1 | Factual recall | Negative abstentions | Generation errors, all 72 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -241,4 +305,68 @@ and `COMPLETION.json`; subsequent spikes use `REPORT.md`, except
 stopped pointwise (`STOPPED.md`). The full listwise directory also contains
 `PROTOCOL.md`, `VALIDATION.md`, `QUALITY_REVIEW.md`, `NEGATIVE_REVIEW.md`, and
 both arms' `answers.md`. These generated artifacts remain local; this curated
-summary is versioned. No experimental pipeline is promoted by this PR.
+summary is versioned. These experiments did not promote an alternative pipeline
+to production.
+
+## 7. Historical extraction spike
+
+Archived from `experiments/extraction-spike/REPORT.md`. The measurements and
+V1 assumptions below belong to that spike, including the estimated information
+loss and proposed answer behavior; they are not current production guarantees.
+
+Two ways of reading a docs.mistral.ai page were compared on 13 fixed pages:
+the server-rendered HTML, and the React payload the browser fetches with the
+`RSC: 1` header. Version 1 extracts the HTML. This report records what that
+choice keeps, what it loses, and the evidence.
+
+### Method
+
+27 sequential GET requests with a `Docstral/0.1` User-Agent and a 0.5 s
+delay: HTML and payload for each page, plus the MDX source of one page as
+ground truth. The HTML route selects `main article.prose`; the payload route
+converts the component tree and rejects any page with an unknown component.
+
+### Results by page family
+
+| Family                         | Pages                                           | HTML                                                                                 | Payload                                                              |
+| ------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| Pages with tabbed code samples | chat-completion, agents-api, vision             | 6, 8, 4 code blocks: the active Python tab only                                      | 35, 57, 21 code blocks: every language and variant                   |
+| Prose pages                    | model-lifecycle, admin-api overview, studio hub | complete, 3/3 tables                                                                 | identical                                                            |
+| Data pages                     | models table, pricing                           | complete tables, 2/2 and 5/5                                                         | fails: table data lives in the site's JavaScript, not in the payload |
+| Page with public MDX source    | install-setup                                   | 88.1% of source words, 4/8 exact code blocks, light/dark duplicates without language | 96.3%, 8/8 exact code blocks                                         |
+| Generated API reference        | chat, beta/connectors                           | 0 operations recovered                                                               | 1 and 23 operations, 143 KB and 560 KB of Markdown                   |
+
+The payload also failed on two pages whose data it does contain, because of
+two components unknown to the converter. Two fetches straddled a site
+redeploy; all 52 component imports on chat-completion were identical. The
+site returns an ETag and answers `304` to `If-None-Match`.
+
+### What version 1 keeps and loses
+
+Kept, for every page in scope: the full prose, every table, section anchors,
+and the default code sample of each example, which is Python, SDK V2,
+synchronous, non-streaming.
+
+Lost, by decreasing importance, about 7% of the information in scope:
+
+1. Streaming and async code samples. The only loss that is not a translation
+   of the Python sample: event format and asynchronous client differ.
+2. TypeScript code samples. Same API call in another syntax.
+3. cURL code samples. Raw HTTP form of the same call.
+4. Closed FAQ answers, on a few pages such as platform-overview.
+5. SDK V1 variants of the code samples.
+6. Inactive install tabs: Windows and manual installation.
+7. Diagrams, reduced to their alt text.
+
+A question about a TypeScript or streaming sample receives the prose, the
+citation of the page, and an explicit statement that the sample is not
+indexed. No code is inferred from the Python sample. The evaluation dataset
+labels such questions as out of coverage.
+
+### Decision
+
+Version 1 extracts rendered HTML with one extractor. Discovery starts from the
+sitemap and follows in-scope internal links. Payload extraction stays in the
+backlog until evaluation failures are attributable to hidden tabs or a demo
+requires it. API reference pages are deferred; if admitted, they yield one
+document per operation.

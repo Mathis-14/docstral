@@ -63,9 +63,12 @@ are not mocked.
 with the test that would have caught it.
 - Integration tests carry the `integration` marker, are excluded from the unit
 suite, and fail explicitly when their service is missing.
-- Evaluation runners, tests, and type checks are local opt-in commands, outside
-CI and production. Their versioned code and curated results document the
-experiments; evaluation dependencies stay in the optional `eval` group.
+- Evaluation stays local and opt-in, outside CI and production. Keep one
+runner in `evals/run.py` that imports the production Q&A factory and defaults,
+saving answers beside references for manual review. Preserve reviewed datasets
+and historical protocols/results in `evals/`; generated outputs stay in `data/`.
+Do not maintain a duplicate pipeline or add a judge or evaluation dependencies
+without an explicit evaluation requirement.
 
 
 
@@ -225,7 +228,7 @@ qualitative diagnostics, with no validated rejection threshold. These are
 development results, not an unseen holdout or a general rejection of hybrid
 search. Reranking quality, chunk enrichment, and a consolidated evaluation of
 the Q&A path remain unmeasured. Method, run history, and limitations are in
-[evals/README.md](evals/README.md).
+[evals/RESULTS.md](evals/RESULTS.md).
 - D016 — Build separate MCP and worker runtime images from the workspace root,
 installing only each application's locked dependencies as non-editable
 packages. Pin Python and uv images by digest and run as UID/GID 1000. Why:
@@ -380,5 +383,5 @@ plus the two latest complete snapshots and latest failed snapshot.
   resource is missing, unreadable or empty. Keep generation defaults in MCP
   configuration and the fixed abstention with its response validation. Why:
   prompt text is independently readable while startup, model selection and
-  grounded output retain their existing contracts. Include the prompt in
-  evaluation fingerprints; AI Registry integration is deferred.
+  grounded output retain their existing contracts. The local evaluation runner
+  imports this same answerer and prompt; AI Registry integration is deferred.
