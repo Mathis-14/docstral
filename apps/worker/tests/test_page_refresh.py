@@ -1,7 +1,10 @@
+import asyncio
+
 import httpx
 import pytest
 from docstral_worker.models import PageResult
-from docstral_worker.workflows.activities import sync_page
+from docstral_worker.workflows.activities import activity_scope, sync_page
+from mistralai.workflows.exceptions import WorkflowError
 from temporalio.testing import ActivityEnvironment
 from worker_fixtures import Services, html
 from worker_fixtures import services as services
@@ -23,13 +26,11 @@ async def test_unchanged_page_skips_embedding_and_indexing(services: Services) -
 async def test_temporary_robots_failure_allows_native_page_retry(
     services: Services, status_code: int
 ) -> None:
-    from mistralai.workflows.exceptions import WorkflowError
-
     services.robots_status = status_code
     with pytest.raises(WorkflowError) as error:
         await sync()
     assert not error.value.non_retryable
-    assert all(request.url.path == "/robots.txt" for request in services.requests)
+    assert [request.url.path for request in services.requests] == ["/robots.txt"]
 
 
 async def test_changed_page_replaces_chunks_and_confirms_hash(
@@ -48,15 +49,13 @@ async def test_changed_page_replaces_chunks_and_confirms_hash(
 
 
 async def test_interrupted_indexing_does_not_confirm_page(services: Services) -> None:
-    from mistralai.workflows.exceptions import WorkflowError
-
     await sync()
     services.pages["/a"] = html("Changed", "Changed evidence")
     services.fail = "index"
     with pytest.raises(WorkflowError) as error:
         await sync()
     assert "private-api-credential" not in str(error.value)
-    assert error.value.non_retryable
+    assert not error.value.non_retryable
     assert all(
         fields["index_hash"] == ""
         for path, fields in services.documents.items()
@@ -101,7 +100,6 @@ async def test_failed_vespa_cleanup_does_not_leak_secrets_in_logs(
 ) -> None:
     from docstral_worker.worker import run_worker
     from mistralai import workflows
-    from mistralai.workflows.exceptions import WorkflowError
     from temporalio.api.failure.v1 import Failure
     from temporalio.converter import DataConverter
 
@@ -125,14 +123,14 @@ async def test_lost_heartbeat_stops_page_before_index_writes(
     services: Services, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from mistralai import workflows
-    from mistralai.workflows.exceptions import WorkflowError
 
     def disconnected() -> None:
         raise httpx.ConnectError("Control plane unavailable")
 
     monkeypatch.setattr(workflows, "activity_heartbeat", disconnected)
-    with pytest.raises(WorkflowError):
+    with pytest.raises(WorkflowError) as error:
         await sync()
+    assert not error.value.non_retryable
     assert not services.documents
 
 
@@ -146,3 +144,50 @@ async def test_robots_denial_is_returned_as_unreliable_exploration(
     assert result.reason == "robots_disallowed"
     assert not services.documents
     assert all(request.url.path == "/robots.txt" for request in services.requests)
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
+async def test_activity_stops_heartbeats_on_exit(outcome: str) -> None:
+    received = asyncio.Event()
+    heartbeat_tasks: list[asyncio.Task[object]] = []
+    environment = ActivityEnvironment()
+
+    def on_heartbeat(*details: object) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        heartbeat_tasks.append(task)
+        received.set()
+
+    environment.on_heartbeat = on_heartbeat
+
+    async def execute() -> None:
+        async with activity_scope("sync_page", "https://docs.mistral.ai/a"):
+            await received.wait()
+            if outcome == "failure":
+                raise RuntimeError("private-api-credential")
+            if outcome == "cancel":
+                await asyncio.Future[None]()
+
+    async with asyncio.timeout(5):
+        activity = asyncio.create_task(environment.run(execute))
+        try:
+            await received.wait()
+            if outcome == "cancel":
+                activity.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await activity
+            elif outcome == "failure":
+                with pytest.raises(
+                    WorkflowError, match=r"sync_page.*RuntimeError"
+                ) as error:
+                    await activity
+                assert not error.value.non_retryable
+                assert "private-api-credential" not in str(error.value)
+            else:
+                await activity
+        finally:
+            if not activity.done():
+                activity.cancel()
+                await asyncio.gather(activity, return_exceptions=True)
+    assert heartbeat_tasks
+    assert all(task.cancelled() for task in heartbeat_tasks)

@@ -339,7 +339,7 @@ plus the two latest complete snapshots and latest failed snapshot.
   An empty confirmation preserves unfinished mutations in the inventory.
   Extraction failures preserve existing content and remain explicit partial
   results; failed downloads make deletion unsafe. Use three bounded native
-  attempts for transient page failures, no retries for permanent failures,
+  attempts for raised activity errors without a custom retry classifier,
   and a 50-minute workflow timeout. No refresh snapshots, local JSON registry,
   intermediate artifacts, retention or volume lock remain. Page-based releases
   remove maintenance; deployment releases the maintenance flag only when the
@@ -357,7 +357,7 @@ plus the two latest complete snapshots and latest failed snapshot.
 - D027 — Use Crawlee 1.10.0 for downloads, HTML link parsing and standalone
   capture queues. Keep a short strict Docstral sitemap parser, canonicalization,
   admission and response classification. Native activities own their three
-  transient attempts; standalone capture uses up to three Crawlee attempts.
+  attempts; standalone capture uses up to three Crawlee attempts.
   Retain robots permissions and Crawl-delay, remove Request-rate, ETag caching,
   custom HTTP backoff and Retry-After thresholds. Replace detailed crawl audits
   with counts and errors. Standalone snapshots use a minimal v2 manifest and
@@ -397,3 +397,16 @@ plus the two latest complete snapshots and latest failed snapshot.
   prompt text is independently readable while startup, model selection and
   grounded output retain their existing contracts. The local evaluation runner
   imports this same answerer and prompt; AI Registry integration is deferred.
+
+- D032 — Delegate raised activity errors to the native Workflows retry policy:
+  three total attempts, backoff coefficient 2, with no exception classifier.
+  Preserve heartbeats, cancellation and sanitized error context. Route local
+  work to its existing stable `docstral-local-<identity>` deployment and force
+  native location `local`, clearing inherited Kubernetes metadata. Production
+  uses operator-owned `runtime.DEPLOYMENT_NAME=docstral-production`, native
+  location `k8s` and namespace from the Downward API. Why: deployments isolate
+  execution routing while location metadata describes where workers run;
+  Docstral need not reproduce the orchestrator's retry decisions. Renaming an
+  existing production deployment and retargeting its paused schedules are
+  explicit operator operations. This replaces D026's exception classification;
+  workflow inputs, page results, dependency retries and corpus state are unchanged.

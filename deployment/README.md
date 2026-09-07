@@ -83,7 +83,7 @@ never paste secret values into command arguments or logs.
 | --- | --- |
 | Secret `mistral` | `MISTRAL_API_KEY` |
 | Secret `mcp-google` | `DOCSTRAL_GOOGLE_CLIENT_ID`, `DOCSTRAL_GOOGLE_CLIENT_SECRET`, `DOCSTRAL_ALLOWED_EMAILS`, `DOCSTRAL_OAUTH_SIGNING_KEY` |
-| ConfigMap `runtime` | `DEPLOYMENT_NAME` (unique to this worker environment), `DOCSTRAL_OAUTH_BASE_URL` |
+| ConfigMap `runtime` | `DEPLOYMENT_NAME=docstral-production`, `DOCSTRAL_OAUTH_BASE_URL` |
 
 Optional: set `DOCSTRAL_ANSWER_MODEL` in ConfigMap `runtime` to override
 `ministral-8b-2512`. Run `kubectl -n docstral edit configmap runtime`, then
@@ -123,7 +123,8 @@ The workflow does not change schedule state.
 3. The workflow verifies paired images and prerequisites, stops MCP and worker,
    waits for their pods to terminate, removes legacy worker permissions, migrates
    Vespa and starts both runtimes. A failed migration prevents runtime startup.
-4. Trigger `docstral-refresh` manually in AI Studio with `{}`. The first run
+4. Trigger `docstral-refresh` manually in AI Studio with `{}`, explicitly
+   selecting deployment `docstral-production`. The first run
    reconciles the existing corpus and confirms pages in Vespa;
    subsequent runs update only added or changed articles and delete absent ones.
    Keep scheduling disabled until the refresh and Vibe test succeed. See
@@ -139,6 +140,36 @@ After DNS and TLS are ready, connect Vibe to `https://<MCP_PUBLIC_HOSTNAME>/mcp`
 log in and call `ask_docs` with sources; follow the [public checks](https.md#verify).
 Pod readiness is not public HTTPS readiness or Q&A quality. Use `k9s -n docstral`
 for inspection. Deployment never creates a schedule or waits for certificate issuance.
+
+## Changing the production Workflows deployment
+
+`DEPLOYMENT_NAME` routes executions; the worker's native location metadata
+(`k8s`, namespace `docstral`) describes its infrastructure. The namespace comes
+from the Downward API because the worker does not mount a service-account token.
+Local launchers use distinct stable `docstral-local-…` deployments and report
+location `local`. All production API triggers and schedules must explicitly
+select `deployment_name="docstral-production"`; do not rely on automatic routing.
+
+If an existing cluster uses a different deployment name:
+
+1. In Studio, pause every schedule targeting the old deployment and wait for
+   all running or retrying executions to finish with the old worker. Do not
+   trigger new runs during the transition.
+2. Set only `DEPLOYMENT_NAME` to `docstral-production` in ConfigMap `runtime`,
+   preserving its other values. Retarget the schedules to `docstral-production`
+   while keeping them paused.
+3. Deploy the worker release through the normal deployment workflow. Existing
+   pods retain their old environment until replaced; a ConfigMap edit alone
+   does not move a running worker or an execution to another deployment.
+4. Verify the new deployment is active in Studio and reports location `k8s`
+   and namespace `docstral`. Confirm the old worker has stopped. Trigger a fresh
+   refresh and then an unchanged run, explicitly targeting `docstral-production`,
+   before manually resuming the schedules.
+
+Deployment and worker startup do not rename deployments, retarget schedules or
+resume them automatically. A name change does not clear Vespa or transfer old
+execution history. On failure, keep schedules paused and check which deployment
+has an active worker before retrying. See [worker routing and checks](../apps/worker/README.md#production-routing).
 
 ## Failure recovery
 

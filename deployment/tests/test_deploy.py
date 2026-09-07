@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -281,3 +282,55 @@ def test_public_resource_names_stay_strings_after_yaml_rendering(
         "networking.gke.io/pre-shared-certs": "null"
     }
     assert resources["GCPGatewayPolicy"]["spec"]["default"]["sslPolicy"] == "on"
+
+
+def test_worker_reports_production_location_from_manifest(tmp_path: Path) -> None:
+    result, _ = run_step(
+        "Render immutable images and stop the application runtimes", tmp_path
+    )
+    assert result.returncode == 0, result.stderr
+    worker = next(
+        resource
+        for resource in yaml.safe_load_all((tmp_path / "runtime.yaml").read_text())
+        if resource["kind"] == "Deployment" and resource["metadata"]["name"] == "worker"
+    )
+    pod = worker["spec"]["template"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    variables = {item["name"]: item for item in pod["containers"][0]["env"]}
+    assert variables["DEPLOYMENT_NAME"]["valueFrom"] == {
+        "configMapKeyRef": {"name": "runtime", "key": "DEPLOYMENT_NAME"}
+    }
+    assert variables["DEPLOYMENT_LOCATION_K8S_NAMESPACE"]["valueFrom"] == {
+        "fieldRef": {"fieldPath": "metadata.namespace"}
+    }
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+from mistralai import workflows
+
+assert workflows.config.worker.deployment_name == "docstral-production"
+location = workflows.config.worker.deployment_location
+assert location.location_type == "k8s"
+assert location.k8s_namespace == "docstral"
+""",
+        ],
+        cwd=tmp_path,
+        env={
+            "PATH": os.environ["PATH"],
+            **{
+                name: item["value"]
+                for name, item in variables.items()
+                if "value" in item
+            },
+            "MISTRAL_API_KEY": "test-key",
+            "DEPLOYMENT_NAME": "docstral-production",
+            "LOG_LEVEL": "ERROR",
+            "DEPLOYMENT_LOCATION_K8S_NAMESPACE": worker["metadata"]["namespace"],
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
