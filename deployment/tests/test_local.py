@@ -4,6 +4,7 @@ import socket
 import subprocess
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -309,6 +310,16 @@ def test_active_local_execution_is_resumed_without_duplicate(
     assert all(
         not request.url.path.endswith("/execute") for request in boundary.requests
     )
+    inventory = [
+        request
+        for request in boundary.requests
+        if request.url.path == "/v1/workflows/runs"
+    ]
+    assert inventory
+    assert all(
+        request.url.params["deployment_name"] == config().deployment
+        for request in inventory
+    )
 
 
 def test_partial_refresh_is_reported_before_serving(
@@ -321,12 +332,46 @@ def test_partial_refresh_is_reported_before_serving(
 
 def test_production_environment_cannot_route_the_local_worker(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("DEPLOYMENT_NAME", "production")
-    monkeypatch.setenv("VESPA_ENDPOINT", "https://production.example")
+    production = {
+        "DEPLOYMENT_NAME": "docstral-production",
+        "VESPA_ENDPOINT": "https://production.example",
+        "KUBERNETES_SERVICE_HOST": "10.0.0.1",
+        "DEPLOYMENT_LOCATION_LOCATION_TYPE": "k8s",
+        "DEPLOYMENT_LOCATION_K8S_CLUSTER": "production-cluster",
+        "DEPLOYMENT_LOCATION_K8S_NAMESPACE": "docstral",
+    }
+    for name, value in production.items():
+        monkeypatch.setenv(name, value)
+    (tmp_path / ".env").write_text(
+        "\n".join(f"{name}={value}" for name, value in production.items()) + "\n"
+    )
     env = config().environment("worker")
     assert env["DEPLOYMENT_NAME"].startswith("docstral-local-")
     assert env["VESPA_ENDPOINT"] == "http://localhost:8080"
+    assert env["DEPLOYMENT_NAME"] == config().deployment
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+from mistralai import workflows
+
+assert workflows.config.worker.deployment_name.startswith("docstral-local-")
+location = workflows.config.worker.deployment_location
+assert location.location_type == "local"
+assert location.k8s_cluster is None
+assert location.k8s_namespace is None
+""",
+        ],
+        cwd=tmp_path,
+        env={**env, "LOG_LEVEL": "ERROR"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
     assert (
         LocalConfig.model_validate(
             {"api_key": "test-key", "query_port": 8082}

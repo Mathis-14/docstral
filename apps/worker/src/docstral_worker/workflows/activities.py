@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
 
-import httpx
 import structlog
 from mistralai import workflows
 from mistralai.search.toolkit.clients.mistral import build_mistral_client
@@ -16,28 +15,9 @@ from mistralai.workflows.exceptions import WorkflowError
 from docstral_worker.config import refresh_config
 from docstral_worker.corpus import VespaCorpus
 from docstral_worker.crawler.crawl import download
-from docstral_worker.crawler.fetch import is_transient
 from docstral_worker.crawler.sitemap import fetch_sitemap
 from docstral_worker.indexing import PageIndexer
 from docstral_worker.models import DiscoveryResult, PageResult
-
-
-def retryable(error: BaseException) -> bool:
-    if is_transient(error):
-        return True
-    if isinstance(error, BaseExceptionGroup):
-        return all(retryable(cause) for cause in error.exceptions)
-    if isinstance(
-        error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
-    ):
-        return True
-    status = getattr(error, "status_code", None)
-    if isinstance(error, httpx.HTTPStatusError):
-        status = error.response.status_code
-    if isinstance(status, int):
-        return status in (408, 429) or 500 <= status < 600
-    cause = error.__cause__ or error.__context__
-    return cause is not None and retryable(cause)
 
 
 async def heartbeat() -> None:
@@ -58,18 +38,16 @@ async def activity_scope(stage: str, url: str | None = None) -> AsyncIterator[No
     except Exception as error:
         while isinstance(error, ExceptionGroup) and len(error.exceptions) == 1:
             error = error.exceptions[0]
-        transient = retryable(error)
         structlog.get_logger(__name__).error(
             "refresh_activity_failed",
             stage=stage,
             url=url,
             error_type=type(error).__name__,
-            retryable=transient,
         )
+        # Dependency messages can contain credentials; expose only safe context.
         raise WorkflowError(
             f"{stage} failed for {url or 'the corpus'} ({type(error).__name__}); "
             "check worker configuration and dependency availability",
-            non_retryable=not transient,
         ) from None
 
 

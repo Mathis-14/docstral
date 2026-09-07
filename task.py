@@ -51,6 +51,9 @@ class LocalConfig(BaseModel):
             "MISTRAL_API_KEY": self.api_key.get_secret_value(),
             "VESPA_ENDPOINT": self.endpoint,
             "DEPLOYMENT_NAME": self.deployment,
+            "DEPLOYMENT_LOCATION_LOCATION_TYPE": "local",
+            "DEPLOYMENT_LOCATION_K8S_CLUSTER": "null",
+            "DEPLOYMENT_LOCATION_K8S_NAMESPACE": "null",
             "WORKER_NAME": worker_name,
             "OTEL_REDACTION": "strict",
         }

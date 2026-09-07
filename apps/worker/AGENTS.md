@@ -29,8 +29,10 @@
 - Extraction failure preserves existing content and returns a partial result.
   Failed exploration prevents all deletions. Use the complete present inventory,
   not just successfully indexed pages, when planning deletions.
-- Retry transient activities at most three times with exponential backoff;
-  permanent configuration or content failures must not be treated as outages.
+- Let native Workflows retry raised activity errors with three total attempts
+  and backoff coefficient 2; do not classify exceptions to decide retries.
+  Keep explicit workflow errors and page-level partial results. Activity errors
+  expose only safe stage, URL and type context, never dependency messages.
   Keep 20-second heartbeats, a one-minute heartbeat timeout, five-minute activity
   timeouts and a 50-minute workflow timeout.
 - Do not stop MCP, clear collections, migrate Vespa or control Kubernetes from
@@ -65,8 +67,11 @@
   `docstral-refresh` workflow; `make ingestion` requests an explicit update.
 - Root `task.py` owns local orchestration. Developers prepare `.env` and register
   MCP clients manually; Make does not create configuration or prompt for secrets.
-- Keep local deployment routing explicit and distinct from production. Reuse
-  an active local execution; never migrate while that execution is running.
+- Route local executions explicitly to the stable `docstral-local-<identity>`
+  deployment; force native location `local` and clear inherited K8s metadata.
+  Production uses `runtime.DEPLOYMENT_NAME=docstral-production` with native
+  location `k8s` and its namespace from the Downward API, without a mounted token.
+  Reuse an active local execution; never migrate while that execution is running.
 - Require a confirmed indexed page before starting MCP. Report partial results.
 - Do not introduce a separate normal local ingestion pipeline or pending marker.
 

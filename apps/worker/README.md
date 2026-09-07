@@ -31,10 +31,14 @@ Optional: `DOCSTRAL_REFRESH_CONCURRENCY` (default 2, maximum 8),
 `DOCSTRAL_CRAWL_DELAY` (default 0.25 seconds).
 
 Each page is a native Mistral activity with its own result and up to three
-attempts for temporary failures. Successful pages remain recorded in the same
-execution. The workflow times out after 50 minutes; each activity after five.
-Permanent errors are explicit. Exhausted page failures produce a partial result
-and prevent deletions; extraction failures preserve the old indexed page.
+attempts in total for raised errors, with backoff coefficient 2. Docstral does
+not classify exceptions to decide retries. Successful pages remain recorded in
+the same execution. The workflow times out after 50 minutes; each activity after
+five. Activities send heartbeats every 20 seconds, with a one-minute heartbeat
+timeout. Their errors contain the stage, URL and exception type, with dependency
+messages suppressed to protect credentials. Exhausted page failures produce a
+partial result and prevent deletions; extraction failures preserve the old indexed
+page.
 A partial result is a completed workflow, so `pause_on_failure` does not pause
 its schedule: inspect the returned `status`, `failed_urls` and `deletions_skipped`.
 
@@ -53,7 +57,7 @@ The sitemap uses the same HTTP client and a short strict XML parser; a failed
 fetch or malformed sitemap never becomes an empty inventory.
 
 Each activity reloads robots and fetches fresh HTML. Crawlee retries are disabled
-inside activities; the three native attempts handle temporary download failures.
+inside activities; native Workflows handles retries for raised download errors.
 Robots permissions and `Crawl-delay` remain; `Request-rate`, custom HTTP backoff,
 ETag caching and the old `Retry-After > 30s` failure rule have been removed.
 A redirect to another page returns its destination before downloading it.
@@ -73,8 +77,13 @@ and run `make local`. Make does not create configuration or register MCP clients
 The launcher uses a stable `docstral-local-…` deployment derived from this machine
 and Vespa container/ports. It explicitly routes `{}` to `docstral-refresh` there
 and overrides `VESPA_ENDPOINT` with localhost, even if `.env` contains production
-values. The activity graph and refresh defaults are identical to production.
+values. It also forces `DEPLOYMENT_LOCATION_LOCATION_TYPE=local` and clears
+inherited `DEPLOYMENT_LOCATION_K8S_CLUSTER` and `DEPLOYMENT_LOCATION_K8S_NAMESPACE`
+using the SDK's `null` value, including when `.env` contains production metadata.
+The activity graph and refresh defaults are identical to production.
 
+After migration, the launcher waits up to 120 seconds for the local Vespa
+document API to become available; a timeout fails with Docker diagnostics.
 On an empty corpus it waits for the first refresh before starting MCP. A corpus
 with confirmed pages is reused. `make ingestion` requests an update and exits;
 an already active local execution is resumed instead of duplicated. A resumed
@@ -107,6 +116,27 @@ For an already indexed Vespa instance, start MCP alone:
 uv run --locked --all-packages --env-file .env docstral-mcp \
   --vespa-endpoint http://localhost:8080 --host 127.0.0.1 --port 8000
 ```
+
+## Production routing
+
+Set `DEPLOYMENT_NAME=docstral-production` in the cluster's operator-owned
+`runtime` ConfigMap. The worker manifest sets native location `k8s` and obtains
+the namespace through the Downward API; no service-account token is mounted.
+The location describes the host environment. `DEPLOYMENT_NAME` is the routing
+boundary, so production and local workers may register the same `docstral-refresh`
+workflow without competing for executions.
+
+In Studio, select the `docstral-production` deployment for production runs and
+schedules. API callers must pass `deployment_name="docstral-production"` explicitly,
+with input `{}`. Omitting the deployment can cause an ambiguous-workflow error
+when local and production workers are both active. Worker startup does not create
+or enable schedules. See [Mistral deployment routing](https://docs.mistral.ai/studio/workflows/managing-workflows-in-production/deployments).
+
+Verify the deployment name and location through Studio or
+`client.workflows.deployments.get_deployment(name="docstral-production")` after
+rollout; the production worker should report location `k8s` and namespace
+`docstral`, while a local launcher reports its `docstral-local-…` name and `local`.
+A deployment rename requires the [operator transition](../../deployment/README.md#changing-the-production-workflows-deployment).
 
 ## Explicit offline snapshots
 
