@@ -83,7 +83,10 @@ never paste secret values into command arguments or logs.
 | --- | --- |
 | Secret `mistral` | `MISTRAL_API_KEY` |
 | Secret `mcp-google` | `DOCSTRAL_GOOGLE_CLIENT_ID`, `DOCSTRAL_GOOGLE_CLIENT_SECRET`, `DOCSTRAL_ALLOWED_EMAILS`, `DOCSTRAL_OAUTH_SIGNING_KEY` |
-| ConfigMap `runtime` | `DEPLOYMENT_NAME=docstral-production`, `DOCSTRAL_OAUTH_BASE_URL` |
+| ConfigMap `runtime` | `DEPLOYMENT_NAME`, `DOCSTRAL_OAUTH_BASE_URL` |
+
+Use the same `DEPLOYMENT_NAME` for the worker, manual runs and schedules.
+The hosted deployment currently uses `docstral-gke`; no rename is required.
 
 Optional: set `DOCSTRAL_ANSWER_MODEL` in ConfigMap `runtime` to override
 `ministral-8b-2512`. Run `kubectl -n docstral edit configmap runtime`, then
@@ -124,11 +127,11 @@ The workflow does not change schedule state.
    waits for their pods to terminate, removes legacy worker permissions, migrates
    Vespa and starts both runtimes. A failed migration prevents runtime startup.
 4. Trigger `docstral-refresh` manually in AI Studio with `{}`, explicitly
-   selecting deployment `docstral-production`. The first run
+   selecting the deployment named in `runtime.DEPLOYMENT_NAME`. The first run
    reconciles the existing corpus and confirms pages in Vespa;
    subsequent runs update only added or changed articles and delete absent ones.
-   Keep scheduling disabled until the refresh and Vibe test succeed. See
-   [worker operations](../apps/worker/README.md).
+   After checking the refresh result and Vibe access, create or resume the
+   [hourly schedule](#hourly-ingestion).
 
 ```sh
 kubectl -n docstral get pods,pvc,jobs
@@ -141,6 +144,45 @@ log in and call `ask_docs` with sources; follow the [public checks](https.md#ver
 Pod readiness is not public HTTPS readiness or Q&A quality. Use `k9s -n docstral`
 for inspection. Deployment never creates a schedule or waits for certificate issuance.
 
+## Hourly ingestion
+
+Create one schedule in Mistral Studio for the production workflow. This is a
+one-time setup; schedules persist across worker restarts without a redeployment.
+
+With `kubectl` pointing to the production cluster, read its deployment name:
+
+```sh
+kubectl -n docstral get configmap runtime \
+  -o jsonpath='{.data.DEPLOYMENT_NAME}{"\n"}'
+```
+
+In Studio, select `docstral-refresh` and this deployment, then create a schedule
+with the following settings. If one already exists for this target, edit it.
+
+| Setting | Value |
+| --- | --- |
+| Workflow | `docstral-refresh` |
+| Deployment | The value read above (`docstral-gke` for the hosted service) |
+| Input | `{}` |
+| Cron | `0 * * * *` — every hour, at minute zero |
+| Time zone | `UTC` |
+| Overlap | `SKIP` — skip a scheduled run if the previous scheduled run is still active |
+| Pause on failure | Enabled |
+| State | Active, with no execution limit |
+
+After saving, check that the schedule is active and shows its next execution.
+After the first run, inspect the result: `COMPLETED` can still return
+`status: partial`; check `failed_urls` and `deletions_skipped`.
+Each run checks the documentation again and indexes only changed pages.
+
+Use the schedule's manual trigger for an immediate refresh. Pause and resume it
+in Studio around [deployments](#deploy-and-test). A failed workflow pauses the
+schedule until you resolve the failure and resume it; a partial result does not.
+GitHub deployment does not create, pause or resume schedules.
+
+See [Mistral scheduling](https://docs.mistral.ai/studio/workflows/building-workflows/scheduling)
+for the Studio and API options.
+
 ## Changing the production Workflows deployment
 
 `DEPLOYMENT_NAME` routes executions; the worker's native location metadata
@@ -148,22 +190,22 @@ for inspection. Deployment never creates a schedule or waits for certificate iss
 from the Downward API because the worker does not mount a service-account token.
 Local launchers use distinct stable `docstral-local-…` deployments and report
 location `local`. All production API triggers and schedules must explicitly
-select `deployment_name="docstral-production"`; do not rely on automatic routing.
+select the configured `DEPLOYMENT_NAME`; do not rely on automatic routing.
 
-If an existing cluster uses a different deployment name:
+Keep the existing name. Only follow these steps if you intentionally rename it:
 
 1. In Studio, pause every schedule targeting the old deployment and wait for
    all running or retrying executions to finish with the old worker. Do not
    trigger new runs during the transition.
-2. Set only `DEPLOYMENT_NAME` to `docstral-production` in ConfigMap `runtime`,
-   preserving its other values. Retarget the schedules to `docstral-production`
+2. Set only `DEPLOYMENT_NAME` to the chosen name in ConfigMap `runtime`,
+   preserving its other values. Retarget the schedules to the same name
    while keeping them paused.
 3. Deploy the worker release through the normal deployment workflow. Existing
    pods retain their old environment until replaced; a ConfigMap edit alone
    does not move a running worker or an execution to another deployment.
 4. Verify the new deployment is active in Studio and reports location `k8s`
    and namespace `docstral`. Confirm the old worker has stopped. Trigger a fresh
-   refresh and then an unchanged run, explicitly targeting `docstral-production`,
+   refresh and then an unchanged run, explicitly targeting the new deployment,
    before manually resuming the schedules.
 
 Deployment and worker startup do not rename deployments, retarget schedules or

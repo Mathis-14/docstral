@@ -92,7 +92,8 @@ These measure retrieval on a development set, not answer accuracy or performance
 
 GKE runs separate MCP and worker images with persistent Vespa storage. Only MCP is publicly exposed, through HTTPS and Google OAuth with a configured email or domain allowlist.
 
-Deployment does not ingest documentation or enable a schedule automatically.
+Configure an hourly schedule in Mistral Studio to refresh the documentation automatically.
+See the [scheduling guide](deployment/README.md#hourly-ingestion).
 
 - [GKE deployment](deployment/README.md): configuration, images, rollout and recovery.
 - [Public HTTPS](deployment/https.md): DNS, certificates and readiness.
