@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/mcp/**"
-      - "common/**"
+      - "packages/vespa/**"
       - "apps/*/pyproject.toml"
       - "pyproject.toml"
       - "uv.lock"
@@ -17,7 +17,7 @@ on:
     branches: [main]
     paths:
       - "apps/mcp/**"
-      - "common/**"
+      - "packages/vespa/**"
       - "apps/*/pyproject.toml"
       - "pyproject.toml"
       - "uv.lock"

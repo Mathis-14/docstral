@@ -1,50 +1,16 @@
-.PHONY: local refresh vibe vespa-up vespa-reset migrate crawl extract ingest mcp check
+.DEFAULT_GOAL := local
+.PHONY: local ingestion check
 
 VESPA_CONTAINER ?= docstral-vespa
 VESPA_QUERY_PORT ?= 8080
 VESPA_CONFIG_PORT ?= 19071
-VESPA_ENDPOINT ?= http://localhost:$(VESPA_QUERY_PORT)
-VESPA_CONFIG_URL ?= http://localhost:$(VESPA_CONFIG_PORT)
-VESPA_APP_DIR := common/src/docstral_vespa
 
-vespa-up:
-	uv run mistral-vespa local up --query-port $(VESPA_QUERY_PORT) --config-port $(VESPA_CONFIG_PORT) --name $(VESPA_CONTAINER)
-
-vespa-reset:
-	uv run mistral-vespa local down --name $(VESPA_CONTAINER)
-
-migrate:
-	uv run mistral-vespa migrate --app-dir $(VESPA_APP_DIR) --config-server $(VESPA_CONFIG_URL) --query-port $(VESPA_QUERY_PORT)
-
-crawl:
-	uv run docstral-worker crawl
-
-extract:
-	uv run docstral-worker extract
-
-ingest:
-	@echo "Rebuilding local Vespa; the existing local index will be removed."
-	$(MAKE) vespa-reset
-	$(MAKE) vespa-up
-	$(MAKE) migrate
-	uv run --env-file .env docstral-worker ingest --vespa-endpoint $(VESPA_ENDPOINT)
-
-mcp:
-	uv run --env-file .env docstral-mcp --vespa-endpoint $(VESPA_ENDPOINT)
-
-vibe:
-	@test -f .env || cp .env.example .env
-	uv run --env-file .env sh -c 'exec vibe mcp add docstral \
-		--url "http://127.0.0.1:$${DOCSTRAL_MCP_PORT:-8000}/mcp" \
-		--transport streamable-http --header X-Docstral-Client=vibe'
+local ingestion:
+	uv sync --locked --all-packages
+	VESPA_CONTAINER=$(VESPA_CONTAINER) VESPA_QUERY_PORT=$(VESPA_QUERY_PORT) VESPA_CONFIG_PORT=$(VESPA_CONFIG_PORT) uv run --locked --all-packages --env-file .env python task.py $(if $(filter ingestion,$@),--refresh,)
 
 check:
-	uv run ruff check .
-	uv run ruff format --check .
-	uv run mypy
-	uv run pytest
-
-local refresh:
-	@test -f .env || cp .env.example .env
-	uv sync --locked --all-packages
-	VESPA_CONTAINER=$(VESPA_CONTAINER) VESPA_QUERY_PORT=$(VESPA_QUERY_PORT) VESPA_CONFIG_PORT=$(VESPA_CONFIG_PORT) uv run --locked --all-packages --env-file .env python deployment/local.py $(if $(filter refresh,$@),--refresh,)
+	uv run --locked --all-packages ruff check .
+	uv run --locked --all-packages ruff format --check .
+	uv run --locked --all-packages mypy
+	uv run --locked --all-packages pytest

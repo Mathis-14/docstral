@@ -103,7 +103,7 @@ def fingerprints(config: QAConfig) -> dict[str, str]:
         *Path("evals").glob("*.py"),
         *Path("apps/mcp/src").rglob("*.py"),
         Path("apps/mcp/src/docstral_mcp/qa/prompt.md"),
-        *Path("common/src").rglob("*.py"),
+        *Path("packages/vespa/src").rglob("*.py"),
         Path("uv.lock"),
         config.dataset,
         config.freeze_path,

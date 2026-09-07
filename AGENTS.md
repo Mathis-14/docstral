@@ -33,7 +33,7 @@ environment variables.
 
 - Python 3.13, `uv` workspace, hatchling. Applications live under `apps/`,
 each with its own `pyproject.toml`, `src/` and `tests/`. Shared code is
-kept in `common/` only when both applications actually share it.
+kept in `packages/` only when both applications actually share it.
 - Ruff for lint and format, mypy strict, pytest.
 - Dependencies are pinned in `uv.lock`. Upgrading Search Toolkit or its Vespa
 plugin is a dedicated PR.
@@ -63,9 +63,12 @@ are not mocked.
 with the test that would have caught it.
 - Integration tests carry the `integration` marker, are excluded from the unit
 suite, and fail explicitly when their service is missing.
-- Evaluation runners, tests, and type checks are local opt-in commands, outside
-CI and production. Their versioned code and curated results document the
-experiments; evaluation dependencies stay in the optional `eval` group.
+- Evaluation stays local and opt-in, outside CI and production. Keep one
+runner in `evals/run.py` that imports the production Q&A factory and defaults,
+saving answers beside references for manual review. Preserve reviewed datasets
+and historical protocols/results in `evals/`; generated outputs stay in `data/`.
+Do not maintain a duplicate pipeline or add a judge or evaluation dependencies
+without an explicit evaluation requirement.
 
 
 
@@ -171,8 +174,8 @@ each full Markdown page to `MarkdownTokenTextSplitter` with `chunk_size=800`,
 the canonical URL as `source_id`, embed chunk content alone with the
 1024-dimensional `mistral-embed`, and rank densely by closeness then cosine,
 with lexical weights at zero. Continue after page-local ingestion errors, but
-stop on splitter, embedding, or Vespa failure. The local `make ingest` entry
-point rebuilds Vespa before each complete snapshot ingestion. Citations are
+stop on splitter, embedding, or Vespa failure. The local snapshot rebuild
+procedure resets Vespa before each complete snapshot ingestion. Citations are
 page-level for this baseline. Why: the current snapshot is the complete corpus,
 while per-document upserts cannot remove a page absent from a later snapshot.
 Measured on the current 331 convertible pages, the toolkit baseline produced
@@ -225,7 +228,7 @@ qualitative diagnostics, with no validated rejection threshold. These are
 development results, not an unseen holdout or a general rejection of hybrid
 search. Reranking quality, chunk enrichment, and a consolidated evaluation of
 the Q&A path remain unmeasured. Method, run history, and limitations are in
-[evals/README.md](evals/README.md).
+[evals/RESULTS.md](evals/RESULTS.md).
 - D016 — Build separate MCP and worker runtime images from the workspace root,
 installing only each application's locked dependencies as non-editable
 packages. Pin Python and uv images by digest and run as UID/GID 1000. Why:
@@ -248,7 +251,7 @@ repairs it. Maintenance shares the lock and survives worker replacement.
 After publication, retain two complete snapshots and one failed snapshot,
 also protecting `current` and the published snapshot; never follow symlinks
 during cleanup. This is a cluster-only path using in-cluster credentials:
-local `make ingest` and Mac snapshot retention remain unchanged.
+local snapshot rebuilding and Mac snapshot retention remain unchanged.
 - D018 — Protect the MCP with FastMCP's native Google OAuth provider when
 explicitly launched with `--auth google`; permit tool access only for verified
 Google emails in `DOCSTRAL_ALLOWED_EMAILS`. Why: the autonomous Q&A assessment
@@ -341,8 +344,9 @@ plus the two latest complete snapshots and latest failed snapshot.
   intermediate artifacts, retention or volume lock remain. Page-based releases
   remove maintenance; deployment releases the maintenance flag only when the
   selected legacy release still owns it. Keep deployment tooling separate from
-  the selected release's manifests and migrations, and drain old executions
-  before stopping workers and migrating. Keep one refresh active per corpus.
+  the selected release's manifests and migrations. Operators manually pause
+  schedules and let old executions finish before stopping workers and migrating.
+  Keep one refresh active per corpus.
   This replaces the refresh storage and execution prescriptions of D007,
   D017, D019, D023 and D024, and D020's maintenance requirement; standalone
   local snapshot commands and the Markdown-only citation hash remain unchanged.
@@ -363,22 +367,33 @@ plus the two latest complete snapshots and latest failed snapshot.
   prescriptions in D001, D006 and D007, and D004's Request-rate policy.
   Normal local startup uses the same native workflow as production through an
   explicitly isolated local deployment; reuse confirmed corpus data and active
-  executions, with make refresh for explicit updates. Offline snapshot ingestion
+  executions, with make ingestion for explicit updates. Offline snapshot ingestion
   shares the page indexer. No automatic scheduling or pending marker is added.
 
 - D028 — Keep only two applications: `mcp` owns the MCP transport and its Python
-  Q&A package, while `worker` owns ingestion. Move the existing `docstral_vespa`
-  package to `common/`, preserving its distribution, import name and migrations.
+  Q&A package, while `worker` owns ingestion. Keep the shared `docstral_vespa`
+  package in `packages/vespa/`, preserving its distribution, import name and
+  migrations.
   Worker workflows assemble crawling, extraction and page indexing; these
   components never import orchestration. Group configuration per application
   and keep task-specific models with their task. Why: deployment responsibilities
   and imports match actual consumers without a separate backend package or
   generic shared models. This replaces the layout prescriptions of D009 and
   D011; the two runtime images of D016 remain.
+- D031 — Expose only `make local` (the default), `make ingestion` and `make check`.
+  Keep local orchestration in root `task.py`; ingestion runs the same incremental
+  workflow and exits. Developers prepare `.env` and register their MCP clients
+  explicitly using the README. Make never creates configuration or prompts for
+  secrets. Keep snapshot and maintenance operations available through documented
+  CLI commands. Remove automatic workflow draining from deployment: operators
+  pause schedules and wait for old executions in Studio before deploying; CI
+  still stops application pods before migrating Vespa. Why: small, explicit
+  commands and one local launcher keep startup and deployment easy to follow.
+
 - D029 — Bundle the unchanged system prompt as `docstral_mcp/qa/prompt.md`,
   loaded once when constructing an answerer with an explicit error if the
   resource is missing, unreadable or empty. Keep generation defaults in MCP
   configuration and the fixed abstention with its response validation. Why:
   prompt text is independently readable while startup, model selection and
-  grounded output retain their existing contracts. Include the prompt in
-  evaluation fingerprints; AI Registry integration is deferred.
+  grounded output retain their existing contracts. The local evaluation runner
+  imports this same answerer and prompt; AI Registry integration is deferred.

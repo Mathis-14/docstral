@@ -2,14 +2,17 @@ import json
 import shutil
 import socket
 import subprocess
+import sys
 from collections.abc import Iterator
 
 import httpx
 import pytest
 from docstral_worker import IngestionError
 from docstral_worker.models import RefreshResult
-from local import LocalConfig, launch
 from mistralai.search.toolkit.document import compute_id
+from mistralai.search.toolkit.plugins.vespa.errors import VespaClientError
+
+from task import LocalConfig, launch, main, migrate
 
 SOCKET_BIND = socket.socket.bind
 
@@ -33,6 +36,7 @@ class LocalServices:
         self.confirmed = False
         self.active = False
         self.partial = False
+        self.vespa_statuses: list[int | None] = []
         self.commands: list[list[str]] = []
         self.environments: list[dict[str, str]] = []
         self.requests: list[httpx.Request] = []
@@ -42,6 +46,12 @@ class LocalServices:
         self.requests.append(request)
         path = request.url.path
         if path.startswith("/document/"):
+            if self.vespa_statuses:
+                status = self.vespa_statuses.pop(0)
+                if status is None:
+                    raise httpx.ConnectError("Connection refused", request=request)
+                if status != 200:
+                    return httpx.Response(status, json={"message": "Vespa unavailable"})
             fields = {
                 "source_id": "https://docs.mistral.ai/a",
                 "document_id": compute_id("https://docs.mistral.ai/a"),
@@ -158,6 +168,26 @@ def config() -> LocalConfig:
     return LocalConfig.model_validate({"api_key": "test-key", "mcp_port": 18437})
 
 
+@pytest.mark.parametrize("api_key", [None, "", "   "])
+def test_missing_api_key_fails_before_starting_services(
+    api_key: str | None,
+    boundary: LocalServices,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["task.py"])
+    if api_key is None:
+        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("MISTRAL_API_KEY", api_key)
+
+    assert main() == 1
+
+    assert "set MISTRAL_API_KEY in .env" in capsys.readouterr().err
+    assert not boundary.commands
+    assert not boundary.requests
+
+
 def test_first_start_initializes_then_serves_from_local_vespa(
     boundary: LocalServices,
 ) -> None:
@@ -183,6 +213,45 @@ def test_second_start_reuses_index_without_crawling(boundary: LocalServices) -> 
     assert all(
         not request.url.path.endswith("/execute") for request in boundary.requests
     )
+
+
+@pytest.mark.parametrize(
+    "status", [None, 503], ids=["connection-refused", "unavailable"]
+)
+def test_start_waits_for_the_index_after_migration(
+    boundary: LocalServices, status: int | None
+) -> None:
+    boundary.vespa_statuses = [status, 200]
+
+    assert launch(config(), refresh=False) == 0
+
+    assert not boundary.vespa_statuses
+    assert boundary.commands[-1][0] == "docstral-mcp"
+
+
+def test_migration_reports_a_vespa_startup_timeout(
+    boundary: LocalServices, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    boundary.vespa_statuses = [503]
+    times = iter((0, 121))
+    monkeypatch.setattr("task.monotonic", lambda: next(times))
+
+    with pytest.raises(IngestionError, match="not ready after migration"):
+        migrate(config(), {})
+
+    assert not boundary.processes
+
+
+def test_migration_does_not_retry_a_permanent_vespa_error(
+    boundary: LocalServices,
+) -> None:
+    boundary.vespa_statuses = [400, 200]
+
+    with pytest.raises(VespaClientError, match="status 400"):
+        migrate(config(), {})
+
+    assert boundary.vespa_statuses == [200]
+    assert not boundary.processes
 
 
 def test_restart_accepts_port_after_closed_connection(

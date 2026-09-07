@@ -5,7 +5,8 @@
 - Install: `uv sync --all-packages`
 - Check: `uv run ruff check apps/worker`, `uv run mypy`, `uv run pytest apps/worker/tests`
 - Native worker: `docstral-worker workflows`; see [README.md](README.md).
-- Local snapshot tools: `docstral-worker crawl`, `docstral-worker extract`, `make ingest`.
+- Local snapshot tools: `docstral-worker crawl`, `docstral-worker extract`,
+  `docstral-worker ingest`; see the full rebuild sequence in the guide.
 
 ## Refresh
 
@@ -35,7 +36,8 @@
 - Do not stop MCP, clear collections, migrate Vespa or control Kubernetes from
   ingestion. A changed page may briefly be absent or partial during replacement.
 - No maintenance module, local lock or worker volume is required by refresh.
-  Drain old workflow histories before deploying a changed activity graph.
+  Operators manually pause schedules and let old workflow histories finish
+  before deploying; GitHub Actions does not drain executions automatically.
   Run only one refresh per corpus, and none during migration. Worker startup
   never creates or activates a schedule.
 - SDK trace redaction does not sanitize logs. Filter Vespa cleanup exceptions
@@ -52,7 +54,7 @@
   update `current`. Incomplete captures are not archived. Use the minimal v2
   manifest and verify the HTML hash once at read; refuse legacy formats clearly.
   `extract` reads snapshots offline and refuses overwrite.
-- `make ingest` rebuilds local Vespa before ingesting the current snapshot.
+- The documented snapshot rebuild resets local Vespa before ingestion.
   These commands are separate from the native refresh workflow.
 - Keep the full-page Toolkit splitter at 800 / 800 / 0, embeddings at 1024
   dimensions and citations at canonical-page granularity.
@@ -60,7 +62,9 @@
 ## Normal local execution
 
 - `make local` initializes and reuses local Vespa through the native
-  `docstral-refresh` workflow; `make refresh` requests an explicit update.
+  `docstral-refresh` workflow; `make ingestion` requests an explicit update.
+- Root `task.py` owns local orchestration. Developers prepare `.env` and register
+  MCP clients manually; Make does not create configuration or prompt for secrets.
 - Keep local deployment routing explicit and distinct from production. Reuse
   an active local execution; never migrate while that execution is running.
 - Require a confirmed indexed page before starting MCP. Report partial results.
@@ -73,4 +77,4 @@
   snapshot tools without importing `workflows/`.
 - Group configuration in `config.py` and cross-task results in `models.py`.
   URL, extraction and snapshot-specific models stay with their task.
-- Shared Vespa definitions live in `common/` as `docstral_vespa`.
+- Shared Vespa definitions live in `packages/vespa/` as `docstral_vespa`.

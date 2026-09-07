@@ -61,21 +61,22 @@ HTML and XHTML both return links, including links from unchanged pages.
 MCP stays available while pages are updated; page replacement is not transactional.
 
 Only one refresh may run against a corpus, and none may start during deployment.
-Worker startup never creates or activates a schedule. Before changing the activity
-graph, pause scheduling and let old executions finish with the old worker.
+Worker startup never creates or activates a schedule. Before deployment, manually
+pause scheduling and let old executions finish with the old worker.
 Verify a fresh refresh and an unchanged run before resuming hourly scheduling.
 See [deployment](../../deployment/README.md) for migration and rollout.
 
 ## Local startup
 
-From the repository root, set `MISTRAL_API_KEY` in `.env` and run `make local`.
+From the repository root, copy `.env.example` to `.env`, set `MISTRAL_API_KEY`
+and run `make local`. Make does not create configuration or register MCP clients.
 The launcher uses a stable `docstral-local-…` deployment derived from this machine
 and Vespa container/ports. It explicitly routes `{}` to `docstral-refresh` there
 and overrides `VESPA_ENDPOINT` with localhost, even if `.env` contains production
 values. The activity graph and refresh defaults are identical to production.
 
 On an empty corpus it waits for the first refresh before starting MCP. A corpus
-with confirmed pages is reused. `make refresh` requests an update and exits;
+with confirmed pages is reused. `make ingestion` requests an update and exits;
 an already active local execution is resumed instead of duplicated. A resumed
 execution finishes before migrations. Run only one startup/update command at a
 time. Ctrl+C stops the processes started by that command, keeping Vespa data;
@@ -85,16 +86,52 @@ graphs still require finishing old executions with compatible worker code.
 For separate local instances, override `VESPA_CONTAINER`, `VESPA_QUERY_PORT` and
 `VESPA_CONFIG_PORT` on the make command. `DOCSTRAL_MCP_PORT` selects the MCP port.
 The key must permit native Workflows and embeddings. No schedule or local
-pending marker is created. `make mcp` remains available for an already running,
-indexed Vespa instance.
+pending marker is created. `task.py` at the repository root owns this orchestration.
+
+## Advanced local commands
+
+Run these commands from the repository root. To start Vespa and migrate its schema
+independently (default container and ports):
+
+```sh
+uv run --locked --all-packages mistral-vespa local up \
+  --name docstral-vespa --query-port 8080 --config-port 19071
+uv run --locked --all-packages mistral-vespa migrate \
+  --app-dir packages/vespa/src/docstral_vespa --config-server http://localhost:19071 \
+  --query-port 8080
+```
+
+For an already indexed Vespa instance, start MCP alone:
+
+```sh
+uv run --locked --all-packages --env-file .env docstral-mcp \
+  --vespa-endpoint http://localhost:8080 --host 127.0.0.1 --port 8000
+```
 
 ## Explicit offline snapshots
 
 ```sh
-make crawl       # fresh HTML capture; no embeddings
-make extract     # convert current capture to Markdown without network
-make ingest      # rebuild local Vespa from current capture
+uv run --locked --all-packages docstral-worker crawl
+uv run --locked --all-packages docstral-worker extract
 ```
+
+To rebuild the local index from the current snapshot, stop local workers and MCP,
+then run the full sequence below. **This removes the existing local index.**
+Use `make ingestion` for routine incremental updates instead.
+
+```sh
+uv run --locked --all-packages mistral-vespa local down --name docstral-vespa
+uv run --locked --all-packages mistral-vespa local up \
+  --name docstral-vespa --query-port 8080 --config-port 19071
+uv run --locked --all-packages mistral-vespa migrate \
+  --app-dir packages/vespa/src/docstral_vespa --config-server http://localhost:19071 \
+  --query-port 8080
+uv run --locked --all-packages --env-file .env docstral-worker ingest \
+  --vespa-endpoint http://localhost:8080
+```
+
+Use the same container and ports throughout if your local instance differs.
+The `ingest` CLI alone does not reset Vespa; the preceding commands do that.
 
 These tools are separate from normal startup. Capture uses the shared Crawlee
 adapter with at most three attempts per page and a memory queue. The summary
@@ -121,4 +158,4 @@ Checks: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`,
 - `config.py`: configuration; `models.py`: data exchanged between tasks.
 - `worker.py`: native worker startup; `cli.py`: command-line entry point.
 
-Shared Vespa schemas and index constructors live in `common/`.
+Shared Vespa schemas and index constructors live in `packages/vespa/`.

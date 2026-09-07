@@ -862,7 +862,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "docstral-vespa", editable = "common" },
+    { name = "docstral-vespa", editable = "packages/vespa" },
     { name = "fastmcp", specifier = "==4.0.2" },
     { name = "mistralai-search-toolkit", specifier = "==0.0.13" },
     { name = "pydantic", extras = ["email"] },
@@ -873,7 +873,7 @@ requires-dist = [
 [[package]]
 name = "docstral-vespa"
 version = "0.1.0"
-source = { editable = "common" }
+source = { editable = "packages/vespa" }
 dependencies = [
     { name = "mistralai-search-toolkit" },
     { name = "mistralai-search-toolkit-plugins-vespa" },
@@ -905,7 +905,7 @@ dependencies = [
 requires-dist = [
     { name = "beautifulsoup4" },
     { name = "crawlee", extras = ["beautifulsoup", "httpx"], specifier = "==1.10.0" },
-    { name = "docstral-vespa", editable = "common" },
+    { name = "docstral-vespa", editable = "packages/vespa" },
     { name = "httpx" },
     { name = "mistralai-search-toolkit", extras = ["html-converter-markdownify"], specifier = "==0.0.13" },
     { name = "mistralai-workflows", specifier = "==3.13.0" },

@@ -25,7 +25,7 @@ package = false
 constraint-dependencies = ["langchain-community==0.4.1"]
 
 [tool.uv.workspace]
-members = ["apps/*", "common"]
+members = ["apps/*", "packages/*"]
 
 [tool.ruff]
 line-length = 88
@@ -42,18 +42,19 @@ plugins = ["pydantic.mypy"]
 python_version = "3.13"
 strict = true
 files = [
+    "task.py",
     "deployment",
     "apps/mcp/src",
     "apps/mcp/tests",
     "apps/worker/src",
     "apps/worker/tests",
-    "common/src",
-    "common/tests",
+    "packages/vespa/src",
+    "packages/vespa/tests",
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["deployment"]
-testpaths = ["apps", "common", "deployment/tests"]
+pythonpath = ["."]
+testpaths = ["apps", "packages", "deployment/tests"]
 addopts = "-m 'not integration'"
 asyncio_mode = "auto"
 markers = ["integration: requires external services"]

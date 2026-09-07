@@ -7,12 +7,12 @@ COPY pyproject.toml uv.lock ./
 # uv needs every workspace manifest, even when installing one application.
 COPY apps/mcp/pyproject.toml apps/mcp/pyproject.toml
 COPY apps/worker/pyproject.toml apps/worker/pyproject.toml
-COPY common/pyproject.toml common/pyproject.toml
+COPY packages/vespa/pyproject.toml packages/vespa/pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-workspace --package docstral-mcp
 
 COPY apps/mcp/src apps/mcp/src
-COPY common/src common/src
+COPY packages/vespa/src packages/vespa/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable --package docstral-mcp
 

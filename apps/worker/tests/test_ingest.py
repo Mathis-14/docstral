@@ -119,26 +119,6 @@ def test_cli_does_not_eagerly_import_vespa() -> None:
     )
 
 
-def test_make_ingest_rebuilds_local_vespa() -> None:
-    result = subprocess.run(
-        ["make", "--dry-run", "ingest"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    commands = result.stdout
-    steps = (
-        "mistral-vespa local down",
-        "mistral-vespa local up",
-        "mistral-vespa migrate",
-        "docstral-worker ingest",
-    )
-    positions = [commands.index(step) for step in steps]
-    assert positions == sorted(positions)
-    assert "--app-dir common/src/docstral_vespa" in commands
-
-
 @pytest.mark.parametrize("endpoint", ["localhost:8080", "ftp://localhost:8080"])
 def test_ingest_command_rejects_invalid_endpoint(endpoint: str) -> None:
     with pytest.raises(SystemExit) as exc_info:
