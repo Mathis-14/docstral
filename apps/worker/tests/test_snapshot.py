@@ -18,7 +18,6 @@ from docstral_worker.snapshot import (
     SnapshotReadError,
     current_snapshot,
     page_slug,
-    read_current_snapshot,
     write_snapshot,
 )
 from docstral_worker.urls import RejectionReason
@@ -144,47 +143,13 @@ def test_missing_current_does_not_create_output_directory(tmp_path: Path) -> Non
     assert not out.exists()
 
 
-def test_snapshot_reference_hashes_the_exact_manifest_bytes(tmp_path: Path) -> None:
-    destination = write_snapshot(
-        tmp_path, CRAWLED_AT, sitemap(), result(stored("/guide", b"Guide"))
-    )
-    manifest_path = destination / "manifest.json"
-    reference, snapshot = read_current_snapshot(tmp_path)
-
-    assert reference == snapshot.reference
-    assert reference.manifest_sha256 == sha256(manifest_path.read_bytes()).hexdigest()
-    assert read_current_snapshot(tmp_path, reference)[0] == reference
-
-    # Even JSON-preserving edits change the identity used between activities.
-    manifest_path.write_bytes(manifest_path.read_bytes() + b"\n")
-    with pytest.raises(SnapshotReadError, match="Snapshot is obsolete"):
-        read_current_snapshot(tmp_path, reference)
-
-
-@pytest.mark.parametrize("kind", ["missing", "empty", "failed"])
-def test_activity_snapshot_requires_complete_nonempty_inventory(
-    tmp_path: Path, kind: str
-) -> None:
-    if kind == "empty":
-        write_snapshot(tmp_path, CRAWLED_AT, sitemap(), result())
-    elif kind == "failed":
-        directory = write_snapshot(
-            tmp_path, CRAWLED_AT, sitemap(), result(failed("/bad"), complete=False)
-        )
-        name = directory.name.removesuffix("-failed")
-        directory.rename(tmp_path / name)
-        (tmp_path / "current").write_text(name)
-
-    with pytest.raises(SnapshotReadError):
-        read_current_snapshot(tmp_path)
-
-
 @pytest.mark.parametrize("kind", ["corrupt", "missing", "symlink", "directory"])
 def test_snapshot_get_rejects_invalid_raw_files(tmp_path: Path, kind: str) -> None:
     directory = write_snapshot(
         tmp_path, CRAWLED_AT, sitemap(), result(stored("/guide", b"Guide"))
     )
-    _, snapshot = read_current_snapshot(tmp_path)
+    snapshot = current_snapshot(tmp_path)
+    assert snapshot is not None
     raw = directory / "raw" / "guide.html"
     if kind == "corrupt":
         raw.write_bytes(b"Tampered")
@@ -204,9 +169,7 @@ def test_snapshot_get_rejects_invalid_raw_files(tmp_path: Path, kind: str) -> No
 @pytest.mark.parametrize(
     "component", ["root", "current", "snapshot", "manifest", "raw"]
 )
-def test_activity_snapshot_rejects_symlink_components(
-    tmp_path: Path, component: str
-) -> None:
+def test_snapshot_rejects_symlink_components(tmp_path: Path, component: str) -> None:
     root = tmp_path / "snapshots"
     directory = write_snapshot(
         root, CRAWLED_AT, sitemap(), result(stored("/guide", b"Guide"))
@@ -223,7 +186,9 @@ def test_activity_snapshot_rejects_symlink_components(
     selected.symlink_to(target, target_is_directory=target.is_dir())
 
     with pytest.raises(SnapshotReadError, match="symbolic-link"):
-        read_current_snapshot(root)
+        snapshot = current_snapshot(root)
+        assert snapshot is not None
+        snapshot.get(f"{DOCS}/guide")
 
 
 def test_current_rejects_a_path_outside_the_snapshot_directory(tmp_path: Path) -> None:

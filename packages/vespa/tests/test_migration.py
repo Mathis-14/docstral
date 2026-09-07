@@ -11,8 +11,10 @@ def test_migration_defines_the_docs_index() -> None:
 
     assert definition.name == "docstral"
     assert definition.query_profiles == []
-    assert len(definition.schemas) == 1
-    schema = definition.schemas[0]
+    assert {schema.document_type for schema in definition.schemas} == {"docs", "pages"}
+    schema = next(
+        schema for schema in definition.schemas if schema.document_type == "docs"
+    )
     assert schema.document_type == "docs"
     assert schema.mode is SearchMode.INDEX
     assert schema.indexing_mode is IndexingMode.DOCUMENT_PER_CHUNK
