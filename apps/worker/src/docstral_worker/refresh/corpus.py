@@ -1,64 +1,49 @@
-"""Read and mutate individual documentation sources through the Vespa SDK."""
+import json
+from typing import Protocol
 
-from typing import Protocol, Self
-
-from docstral_vespa import COLLECTION_NAME, index_for_client
+from docstral_vespa import COLLECTION_NAME, PAGE_COLLECTION_NAME, index_for_client
 from mistralai.search.toolkit.document import Document, compute_id
 from mistralai.search.toolkit.plugins.vespa import VespaClient
 from mistralai.search.toolkit.search.errors import DocumentNotFoundError
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import ValidationError
 
 from docstral_worker import IngestionError
-from docstral_worker.urls import canonicalize, is_docs_url
-
-
-class SourceIdentity(BaseModel):
-    """An indexed canonical source, including routes no longer admitted by crawl."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    source_id: str
-    document_id: str
-
-    @model_validator(mode="after")
-    def _validate_identity(self) -> Self:
-        if (
-            not is_docs_url(self.source_id)
-            or canonicalize(self.source_id, self.source_id).url != self.source_id
-        ):
-            raise ValueError("source_id must be a canonical Docstral documentation URL")
-        if self.document_id != compute_id(self.source_id):
-            raise ValueError("document_id must match the toolkit ID of source_id")
-        return self
+from docstral_worker.refresh.models import PageState, SourceIdentity
 
 
 class Corpus(Protocol):
-    """The source operations used by incremental ingestion."""
-
     async def list_sources(self) -> tuple[SourceIdentity, ...]: ...
+    async def read_page(self, url: str) -> PageState | None: ...
+    async def write_page(self, page: PageState) -> None: ...
+    async def delete_page(self, url: str) -> None: ...
     async def index_document(self, document: Document) -> None: ...
     async def delete_document(self, document_id: str) -> None: ...
 
 
 class VespaCorpus:
-    """Use a caller-owned client and the shared chunk index contract."""
-
     def __init__(self, client: VespaClient) -> None:
         self._client = client
         self._index = index_for_client(client)
 
     async def list_sources(self) -> tuple[SourceIdentity, ...]:
-        """Read every inventory page, rejecting invalid source identities."""
+        chunks = await self._list_sources(COLLECTION_NAME)
+        pages = await self._list_sources(PAGE_COLLECTION_NAME)
+        return tuple(
+            sorted(set(chunks) | set(pages), key=lambda source: source.source_id)
+        )
+
+    async def _list_sources(self, collection: str) -> tuple[SourceIdentity, ...]:
         sources: set[SourceIdentity] = set()
         continuation: str | None = None
         seen_continuations: set[str] = set()
         while True:
             page = await self._client.visit_by_selection(
-                COLLECTION_NAME,
-                COLLECTION_NAME,
+                collection,
+                collection,
                 cluster=self._index.schema.content_cluster,
-                field_set=f"{COLLECTION_NAME}:source_id,document_id",
+                field_set=f"{collection}:source_id,document_id",
                 continuation=continuation,
+                extra_params={"wantedDocumentCount": "1000"},
             )
             for document in page.documents:
                 try:
@@ -66,7 +51,7 @@ class VespaCorpus:
                 except ValidationError as exc:
                     raise IngestionError(
                         "Invalid Vespa source inventory; check source_id and "
-                        "document_id in the docs collection"
+                        f"document_id in the {collection} collection"
                     ) from exc
             continuation = page.continuation
             if continuation is None:
@@ -78,12 +63,32 @@ class VespaCorpus:
             seen_continuations.add(continuation)
 
     async def index_document(self, document: Document) -> None:
-        """Replace only this source through the toolkit's indexing implementation."""
         await self._index.index_document(document)
 
     async def delete_document(self, document_id: str) -> None:
-        """Ensure the source is absent, including after a previously completed delete."""
         try:
             await self._index.delete_document(document_id)
         except DocumentNotFoundError:
             return
+
+    async def read_page(self, url: str) -> PageState | None:
+        record = await self._client.get_document(PAGE_COLLECTION_NAME, compute_id(url))
+        if record is None:
+            return None
+        page = PageState.model_validate(record.fields)
+        if page.source_id != url:
+            raise IngestionError("Vespa page confirmation does not match its URL")
+        return page
+
+    async def write_page(self, page: PageState) -> None:
+        await self._client.feed_document(
+            PAGE_COLLECTION_NAME,
+            page.document_id,
+            json.dumps({"fields": page.model_dump(mode="json")}),
+        )
+
+    async def delete_page(self, url: str) -> None:
+        document_id = compute_id(url)
+        await self.write_page(PageState(source_id=url, document_id=document_id))
+        await self.delete_document(document_id)
+        await self._client.delete_document(PAGE_COLLECTION_NAME, document_id)

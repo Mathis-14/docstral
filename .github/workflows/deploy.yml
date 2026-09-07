@@ -28,6 +28,9 @@ jobs:
     environment: production
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: release
     permissions:
       contents: read
       id-token: write
@@ -46,6 +49,7 @@ jobs:
           persist-credentials: false
       - name: Resolve the release commit
         id: release
+        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.release }}
@@ -75,6 +79,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ steps.release.outputs.revision }}
+          path: release
           persist-credentials: false
       - name: Authenticate to Google Cloud
         id: auth
@@ -115,7 +120,7 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ vars.GKE_CLUSTER }}
           location: ${{ vars.GKE_LOCATION }}
-      - name: Preflight and acquire maintenance
+      - name: Preflight and drain workflows
         env:
           BOOTSTRAP: ${{ inputs.bootstrap }}
         run: |
@@ -139,8 +144,7 @@ jobs:
           if [[ "$BOOTSTRAP" == true ]]; then
             kubectl -n docstral get deployment,statefulset,pvc -o json | jq -e '.items | length == 0'
           else
-            kubectl -n docstral exec deployment/worker -- \
-              docstral-worker maintenance on --data-dir /app/data --timeout 120
+            kubectl -n docstral exec -i deployment/worker -- python - < "$GITHUB_WORKSPACE/deployment/drain_refresh.py"
           fi
       - name: Render immutable images and stop the application runtimes
         env:
@@ -149,7 +153,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/migration"
           for target in runtime migration; do
-            resource="$GITHUB_WORKSPACE/deployment/kubernetes"
+            resource="$PWD/deployment/kubernetes"
             if [[ "$target" == migration ]]; then resource="$resource/migration"; fi
             cp -R "$resource" "$RUNNER_TEMP/$target/base"
             printf 'resources:\n  - base\nimages:\n  - name: docstral-worker\n    newName: %s\n    digest: %s\n  - name: docstral-mcp\n    newName: %s\n    digest: %s\n' \
@@ -180,14 +184,19 @@ jobs:
           kubectl -n docstral rollout status statefulset/vespa --timeout=300s
           kubectl -n docstral scale deployment/worker --replicas=1
           kubectl -n docstral rollout status deployment/worker --timeout=300s
-      - name: Start MCP and release maintenance
+      - name: Start MCP
         run: |
           kubectl -n docstral scale deployment/mcp --replicas=1
           kubectl -n docstral rollout status deployment/mcp --timeout=300s
-          kubectl -n docstral exec deployment/worker -- docstral-worker maintenance off --data-dir /app/data
+          # Older releases enable their volume-backed maintenance in the migration Job.
+          if [[ -f apps/worker/src/docstral_worker/maintenance.py ]]; then
+            kubectl -n docstral exec deployment/worker -- \
+              docstral-worker maintenance off --data-dir /app/data
+          fi
           printf 'MCP started. No ingestion or schedule was triggered.\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'Public endpoint: https://%s/mcp. Verify DNS, certificate and OAuth separately; pod rollout does not prove public readiness.\n' "$MCP_PUBLIC_HOSTNAME" >> "$GITHUB_STEP_SUMMARY"
-      - name: Report failure without releasing maintenance
+      - name: Report deployment failure
         if: failure()
+        working-directory: .
         run: |
-          echo 'Deployment failed. Inspect the failed step and migration Job; repair before releasing maintenance.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Deployment failed. Inspect the failed step, Studio runs and migration Job. Verify schedule state in Studio before retrying; do not resume scheduling before manual verification.' >> "$GITHUB_STEP_SUMMARY"

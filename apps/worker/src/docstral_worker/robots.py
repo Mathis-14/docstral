@@ -17,7 +17,11 @@ class RobotsError(IngestionError):
 
 
 class RobotsUnavailableError(RobotsError):
-    pass
+    def __init__(
+        self, url: str, detail: str, *, status_code: int | None = None
+    ) -> None:
+        self.status_code = status_code
+        super().__init__(url, detail)
 
 
 class RobotsDeniedError(RobotsError):
@@ -46,13 +50,14 @@ class RobotsPolicy:
 def load_robots(
     loader: Callable[[], RobotsResponse], configured_delay: float
 ) -> RobotsPolicy:
-    """Load robots.txt and return the policy that applies to Docstral."""
     response = loader()
     if 400 <= response.status_code < 500 and response.status_code != 429:
         return RobotsPolicy(None, configured_delay)
     if response.status_code != 200:
         raise RobotsUnavailableError(
-            response.url, f"unexpected HTTP {response.status_code}"
+            response.url,
+            f"unexpected HTTP {response.status_code}",
+            status_code=response.status_code,
         )
     if response.content_type != "text/plain":
         raise RobotsUnavailableError(

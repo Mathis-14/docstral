@@ -1,9 +1,3 @@
-"""Persist autonomous raw snapshots and validate their manifest.
-
-Naming, raw-file integrity, atomic promotion, and report rendering stay together
-because they enforce one on-disk snapshot contract.
-"""
-
 from __future__ import annotations
 
 import os
@@ -16,11 +10,10 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from docstral_worker import IngestionError
 from docstral_worker.crawl import (
-    SHA256_PATTERN,
     CachedPage,
     CrawlCounts,
     CrawlEntry,
@@ -36,7 +29,7 @@ _SUCCESSFUL_SNAPSHOT_NAME = re.compile(r"\d{8}T\d{6}Z")
 
 
 class SnapshotError(IngestionError):
-    """Base error for snapshot persistence."""
+    pass
 
 
 class SnapshotReadError(SnapshotError):
@@ -52,16 +45,7 @@ class SnapshotWriteError(SnapshotError):
 
 
 class SnapshotCollisionError(SnapshotWriteError):
-    """Raised when a snapshot or raw-page path would collide."""
-
-
-class SnapshotRef(BaseModel):
-    """Identity of the complete snapshot shared between ingestion activities."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    name: str = Field(pattern=r"^[0-9]{8}T[0-9]{6}Z$")
-    manifest_sha256: str = Field(pattern=SHA256_PATTERN)
+    pass
 
 
 class SnapshotManifest(BaseModel):
@@ -84,14 +68,9 @@ class SnapshotManifest(BaseModel):
 
 
 class CurrentSnapshot:
-    def __init__(
-        self, directory: Path, manifest: SnapshotManifest, *, manifest_sha256: str
-    ) -> None:
+    def __init__(self, directory: Path, manifest: SnapshotManifest) -> None:
         self.directory = directory
         self.manifest = manifest
-        self.reference = SnapshotRef(
-            name=directory.name, manifest_sha256=manifest_sha256
-        )
         self._pages = {
             page.canonical_url: page
             for page in manifest.pages
@@ -121,7 +100,6 @@ class CurrentSnapshot:
 
 
 def current_snapshot(out: Path) -> CurrentSnapshot | None:
-    """Return the snapshot named by ``current``."""
     pointer = out / CURRENT_FILE
     _reject_symlinks(pointer)
     if not pointer.exists():
@@ -140,29 +118,7 @@ def current_snapshot(out: Path) -> CurrentSnapshot | None:
         manifest = SnapshotManifest.model_validate_json(manifest_bytes)
     except (OSError, UnicodeError, ValidationError) as exc:
         raise SnapshotReadError(manifest_path, str(exc)) from exc
-    return CurrentSnapshot(
-        directory, manifest, manifest_sha256=sha256(manifest_bytes).hexdigest()
-    )
-
-
-def read_current_snapshot(
-    root: Path, expected: SnapshotRef | None = None
-) -> tuple[SnapshotRef, CurrentSnapshot]:
-    """Require a complete, non-empty snapshot matching the activity reference."""
-    snapshot = current_snapshot(root)
-    if snapshot is None:
-        raise SnapshotReadError(root / CURRENT_FILE, "No current snapshot")
-    if expected is not None and snapshot.reference != expected:
-        raise SnapshotReadError(
-            root / CURRENT_FILE, "Snapshot is obsolete or its manifest changed"
-        )
-    if snapshot.manifest.counts.failed or not snapshot.manifest.counts.stored:
-        raise SnapshotReadError(
-            snapshot.directory / MANIFEST_FILE,
-            "Incremental ingestion requires a complete, non-empty snapshot",
-        )
-    _reject_symlinks(snapshot.directory / "raw")
-    return snapshot.reference, snapshot
+    return CurrentSnapshot(directory, manifest)
 
 
 def _reject_symlinks(path: Path) -> None:
@@ -188,7 +144,6 @@ def write_snapshot(
     sitemap: SitemapSnapshot,
     result: CrawlResult,
 ) -> Path:
-    """Write and promote a complete or failed autonomous snapshot."""
     destination = out / _snapshot_name(crawled_at, result.complete)
     if destination.exists():
         raise SnapshotCollisionError(destination, "destination already exists")
@@ -250,7 +205,6 @@ def _raw_path(canonical_url: str) -> str:
 
 
 def page_slug(canonical_url: str) -> str:
-    """Return the stable filename stem for a canonical documentation URL."""
     path = urlsplit(canonical_url).path.strip("/")
     return path.replace("/", "__") if path else "index"
 
