@@ -10,17 +10,19 @@ from pathlib import Path
 from time import monotonic, sleep
 from uuid import uuid4
 
+import httpx
 from docstral_vespa import PAGE_COLLECTION_NAME, index_for_client
 from docstral_worker import IngestionError
 from docstral_worker.models import PageState, RefreshResult
 from mistralai.client import Mistral
 from mistralai.client.errors import SDKError
 from mistralai.search.toolkit.plugins.vespa import VespaClient, VespaClientConfig
+from mistralai.search.toolkit.plugins.vespa.errors import VespaClientError
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 WORKFLOW = "docstral-refresh"
 ACTIVE = ("RUNNING", "RETRYING_AFTER_ERROR")
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
 
 
 class LocalConfig(BaseModel):
@@ -173,7 +175,7 @@ def migrate(config: LocalConfig, environment: dict[str, str]) -> None:
             "mistral-vespa",
             "migrate",
             "--app-dir",
-            str(ROOT / "common/src/docstral_vespa"),
+            str(ROOT / "packages/vespa/src/docstral_vespa"),
             "--config-server",
             f"http://localhost:{config.config_port}",
             "--query-port",
@@ -183,6 +185,22 @@ def migrate(config: LocalConfig, environment: dict[str, str]) -> None:
         cwd=ROOT,
         env=environment,
     )
+    print("Waiting for the local Vespa index after migration...", flush=True)
+    deadline = monotonic() + 120
+    while True:
+        try:
+            asyncio.run(confirmed_pages(config.endpoint))
+            return
+        except VespaClientError as error:
+            if error.status_code != 503 and not isinstance(
+                error.__cause__, httpx.TransportError
+            ):
+                raise
+            if monotonic() >= deadline:
+                raise IngestionError(
+                    f"Vespa index at {config.endpoint} is not ready after migration; inspect docker logs {config.container}"
+                ) from error
+            sleep(2)
 
 
 def stop(process: subprocess.Popen[bytes]) -> None:
@@ -260,7 +278,7 @@ def launch(config: LocalConfig, *, refresh: bool) -> int:
             count = asyncio.run(confirmed_pages(config.endpoint))
             if count == 0:
                 raise IngestionError(
-                    "No confirmed documentation page is indexed; inspect the refresh errors, then run make refresh"
+                    "No confirmed documentation page is indexed; inspect the refresh errors, then run make ingestion"
                 )
             print(f"{count} confirmed pages available in local Vespa.", flush=True)
             if refresh:

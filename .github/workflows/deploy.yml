@@ -120,7 +120,7 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ vars.GKE_CLUSTER }}
           location: ${{ vars.GKE_LOCATION }}
-      - name: Preflight and drain workflows
+      - name: Preflight
         env:
           BOOTSTRAP: ${{ inputs.bootstrap }}
         run: |
@@ -143,8 +143,6 @@ jobs:
               | select(any(.status.conditions[]?; .status == "True" and (.type == "Complete" or .type == "Failed")) | not)] | length == 0'
           if [[ "$BOOTSTRAP" == true ]]; then
             kubectl -n docstral get deployment,statefulset,pvc -o json | jq -e '.items | length == 0'
-          else
-            kubectl -n docstral exec -i deployment/worker -- python - < "$GITHUB_WORKSPACE/deployment/drain_refresh.py"
           fi
       - name: Render immutable images and stop the application runtimes
         env:

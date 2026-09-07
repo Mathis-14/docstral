@@ -93,32 +93,36 @@ build or re-ingestion is needed; deployments preserve this operator-owned settin
 
 Complete the one-time [public HTTPS setup](https.md) before deploying this release.
 Use `https://<MCP_PUBLIC_HOSTNAME>` as the OAuth origin; deployment rejects a
-mismatch before pausing schedules. Keep the signing key stable and at least 32
+mismatch before stopping runtimes. Keep the signing key stable and at least 32
 characters long. See [MCP setup](#google-oauth-invited-users) for invitations.
 
 ## Deploy and test
 
-Use the deployment workflow to drain old executions before migration. Do not
-start manual refreshes or resume scheduling during deployment. Pausing a schedule
-does not block manual API triggers; operators must respect this deployment window.
+Before deployment, manually pause the `docstral-refresh` schedules targeting the
+production deployment in Mistral Studio. Wait until its executions are no longer
+`RUNNING` or `RETRYING_AFTER_ERROR`, keeping the old worker available to finish them.
+Do not start manual refreshes or resume scheduling during deployment. Pausing a
+schedule does not block manual API triggers.
+
+The deployment workflow does not pause schedules or wait for ingestion executions.
+It stops application pods before migrating; deploying during ingestion can
+interrupt it and leave an old execution for incompatible new worker code to resume.
 
 The workflow keeps its deployment tooling at the workspace root and checks out
 the selected release separately under `release/`. Manifests and migrations come
-from that release; the drain script comes from the workflow revision. Releases
-that still use `maintenance.py` leave maintenance only after MCP rollout succeeds.
-Schedules stay paused in both cases.
+from that release. Releases that still use `maintenance.py` leave maintenance
+only after MCP rollout succeeds.
+The workflow does not change schedule state.
 
 1. Publish a stable `vX.Y.Z` release containing these manifests. Wait for **both**
    image workflows to succeed.
-2. Run **Deploy to GKE** from `main`. Leave `release` empty for the latest stable
+2. Complete the manual scheduling and execution checks above, then run
+   **Deploy to GKE** from `main`. Leave `release` empty for the latest stable
    release, or select a specific tag. Check `bootstrap` only on the first run,
    before any workloads or persistent volumes exist in the namespace.
-3. The workflow verifies paired images, pauses the refresh schedules for the
-   deployment and waits up to 20 minutes for its old executions to finish. The
-   old worker keeps running during that wait. A timeout refuses migration. It
-   then stops MCP and worker, waits for their pods to terminate, removes legacy
-   worker permissions, migrates Vespa and starts both runtimes. Paused schedules are
-   never resumed automatically after success or failure.
+3. The workflow verifies paired images and prerequisites, stops MCP and worker,
+   waits for their pods to terminate, removes legacy worker permissions, migrates
+   Vespa and starts both runtimes. A failed migration prevents runtime startup.
 4. Trigger `docstral-refresh` manually in AI Studio with `{}`. The first run
    reconciles the existing corpus and confirms pages in Vespa;
    subsequent runs update only added or changed articles and delete absent ones.

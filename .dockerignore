@@ -6,10 +6,11 @@
 !apps/*/pyproject.toml
 !apps/*/src/
 !apps/*/src/**
-!common/
-!common/pyproject.toml
-!common/src/
-!common/src/**
+!packages/
+!packages/vespa/
+!packages/vespa/pyproject.toml
+!packages/vespa/src/
+!packages/vespa/src/**
 **/__pycache__/
 **/*.py[cod]
 **/.env*

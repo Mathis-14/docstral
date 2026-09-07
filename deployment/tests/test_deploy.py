@@ -71,36 +71,14 @@ def run_step(
     return result, calls.read_text() if calls.exists() else ""
 
 
-def test_oauth_origin_mismatch_stops_before_pausing_workflows(tmp_path: Path) -> None:
+def test_oauth_origin_mismatch_prevents_deployment(tmp_path: Path) -> None:
     result, calls = run_step(
-        "Preflight and drain workflows",
+        "Preflight",
         tmp_path,
         OAUTH_ORIGIN="https://other.example.com",
     )
     assert result.returncode != 0
-    assert "exec -i deployment/worker -- python -" not in calls
     assert "scale" not in calls
-
-
-def test_old_release_uses_current_workflow_drain_script(tmp_path: Path) -> None:
-    release = tmp_path / "release"
-    (release / "deployment").mkdir(parents=True)
-    shutil.copyfile(
-        ROOT / "deployment/render-public.sh", release / "deployment/render-public.sh"
-    )
-    result, calls = run_step("Preflight and drain workflows", tmp_path, release)
-    assert result.returncode == 0, result.stderr
-    assert "exec -i deployment/worker -- python -" in calls
-
-
-def test_failed_workflow_drain_prevents_deployment(tmp_path: Path) -> None:
-    result, calls = run_step(
-        "Preflight and drain workflows",
-        tmp_path,
-        FAIL_ON="exec -i deployment/worker -- python -",
-    )
-    assert result.returncode != 0
-    assert "exec -i deployment/worker -- python -" in calls
 
 
 @pytest.mark.parametrize(
@@ -113,9 +91,9 @@ def test_failed_workflow_drain_prevents_deployment(tmp_path: Path) -> None:
 def test_preflight_rejects_existing_bootstrap_or_active_migration(
     tmp_path: Path, overrides: dict[str, str]
 ) -> None:
-    result, calls = run_step("Preflight and drain workflows", tmp_path, **overrides)
+    result, calls = run_step("Preflight", tmp_path, **overrides)
     assert result.returncode != 0
-    assert "exec -i deployment/worker -- python -" not in calls
+    assert "scale" not in calls
 
 
 @pytest.mark.parametrize("resource", ["roles", "rolebindings"])
@@ -123,19 +101,18 @@ def test_missing_worker_cleanup_permission_does_not_stop_runtimes(
     tmp_path: Path, resource: str
 ) -> None:
     result, calls = run_step(
-        "Preflight and drain workflows",
+        "Preflight",
         tmp_path,
         FAIL_ON=f"auth can-i delete {resource}.rbac.authorization.k8s.io/worker",
     )
     assert result.returncode != 0
     assert "requires delete permission" in result.stdout
-    assert "exec -i deployment/worker -- python -" not in calls
     assert "scale" not in calls
     assert "delete rolebinding/worker" not in calls
 
 
-def test_permissions_are_checked_before_drain_and_cleanup(tmp_path: Path) -> None:
-    result, _ = run_step("Preflight and drain workflows", tmp_path)
+def test_permissions_are_checked_before_shutdown_and_cleanup(tmp_path: Path) -> None:
+    result, _ = run_step("Preflight", tmp_path)
     assert result.returncode == 0, result.stderr
     result, calls = run_step(
         "Render immutable images and stop the application runtimes", tmp_path
@@ -143,19 +120,14 @@ def test_permissions_are_checked_before_drain_and_cleanup(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr
     for resource in ("roles", "rolebindings"):
         permission = f"auth can-i delete {resource}.rbac.authorization.k8s.io/worker"
-        assert calls.index(permission) < calls.index(
-            "exec -i deployment/worker -- python -"
-        )
-    assert calls.index("exec -i deployment/worker -- python -") < calls.index(
-        "--replicas=0"
-    )
+        assert calls.index(permission) < calls.index("--replicas=0")
     assert calls.index("--replicas=0") < calls.index("--for=delete")
     cleanup = "delete rolebinding/worker role/worker --ignore-not-found"
     assert calls.index("--for=delete") < calls.index(cleanup)
     assert calls.index(cleanup) < calls.index("apply -f")
 
 
-def test_failed_drain_prevents_apply(tmp_path: Path) -> None:
+def test_pod_shutdown_failure_prevents_apply(tmp_path: Path) -> None:
     result, calls = run_step(
         "Render immutable images and stop the application runtimes",
         tmp_path,
