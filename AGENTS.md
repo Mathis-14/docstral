@@ -410,3 +410,9 @@ plus the two latest complete snapshots and latest failed snapshot.
   existing production deployment and retargeting its paused schedules are
   explicit operator operations. This replaces D026's exception classification;
   workflow inputs, page results, dependency retries and corpus state are unchanged.
+
+- D033 — Allow verified Google identities by exact email or an explicitly
+  configured exact domain in optional `DOCSTRAL_ALLOWED_DOMAINS`. Domains are
+  case-insensitive, exclude subdomains and default to none. Keep individual
+  invitations required and reject wildcards or malformed configuration. This
+  extends D018's invitation policy without changing the Google OAuth provider.

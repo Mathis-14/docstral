@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,15 +36,30 @@ class GoogleAuthConfig(BaseSettings):
     google_client_secret: SecretStr = Field(min_length=1)
     oauth_base_url: AnyHttpUrl
     allowed_emails: frozenset[EmailStr] = Field(min_length=1)
+    allowed_domains: frozenset[
+        Annotated[
+            str,
+            Field(
+                max_length=253,
+                pattern=r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$",
+            ),
+        ]
+    ] = frozenset()
     oauth_signing_key: SecretStr = Field(min_length=32)
 
-    @field_validator("allowed_emails", mode="before")
+    @field_validator("allowed_emails", "allowed_domains", mode="before")
     @classmethod
     def parse_invites(cls, value: object) -> object:
         if isinstance(value, str):
             if "*" in value:
-                raise ValueError("invites must be exact email addresses, not wildcards")
-            return [email.strip().lower() for email in value.split(",")]
+                raise ValueError(
+                    "invites must be exact email addresses or domains, not wildcards"
+                )
+            return (
+                [item.strip().lower() for item in value.split(",")]
+                if value.strip()
+                else []
+            )
         return value
 
     @field_validator("google_client_secret", "oauth_signing_key")
