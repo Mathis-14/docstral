@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from docstral_worker.cli import main
 from docstral_worker.extract import extract_page
-from docstral_worker.ingest import ingest_snapshot
-from docstral_worker.refresh.activities import corpus_client
-from docstral_worker.refresh.indexing import PageIndexer
-from docstral_worker.refresh.models import DownloadedPage
+from docstral_worker.indexing import PageIndexer
+from docstral_worker.models import DownloadedPage
+from docstral_worker.workflows.activities import corpus_client
+from docstral_worker.workflows.snapshots import ingest_snapshot
 from mistralai.search.toolkit.clients.mistral import build_mistral_client
 from mistralai.search.toolkit.embedding import MODEL_1024_EMBEDDING, MistralEmbedder
 from mistralai.search.toolkit.errors import SearchToolkitException
@@ -136,7 +136,7 @@ def test_make_ingest_rebuilds_local_vespa() -> None:
     )
     positions = [commands.index(step) for step in steps]
     assert positions == sorted(positions)
-    assert "--app-dir packages/vespa/src/docstral_vespa" in commands
+    assert "--app-dir common/src/docstral_vespa" in commands
 
 
 @pytest.mark.parametrize("endpoint", ["localhost:8080", "ftp://localhost:8080"])

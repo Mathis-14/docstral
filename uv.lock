@@ -13,7 +13,6 @@ resolution-markers = [
 [manifest]
 members = [
     "docstral",
-    "docstral-backend",
     "docstral-mcp",
     "docstral-vespa",
     "docstral-worker",
@@ -849,29 +848,13 @@ eval = [
 ]
 
 [[package]]
-name = "docstral-backend"
-version = "0.1.0"
-source = { editable = "apps/backend" }
-dependencies = [
-    { name = "docstral-vespa" },
-    { name = "mistralai-search-toolkit" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "docstral-vespa", editable = "packages/vespa" },
-    { name = "mistralai-search-toolkit", specifier = "==0.0.13" },
-    { name = "pydantic" },
-]
-
-[[package]]
 name = "docstral-mcp"
 version = "0.1.0"
 source = { editable = "apps/mcp" }
 dependencies = [
-    { name = "docstral-backend" },
+    { name = "docstral-vespa" },
     { name = "fastmcp" },
+    { name = "mistralai-search-toolkit" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
     { name = "starlette" },
@@ -879,8 +862,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "docstral-backend", editable = "apps/backend" },
+    { name = "docstral-vespa", editable = "common" },
     { name = "fastmcp", specifier = "==4.0.2" },
+    { name = "mistralai-search-toolkit", specifier = "==0.0.13" },
     { name = "pydantic", extras = ["email"] },
     { name = "pydantic-settings" },
     { name = "starlette" },
@@ -889,7 +873,7 @@ requires-dist = [
 [[package]]
 name = "docstral-vespa"
 version = "0.1.0"
-source = { editable = "packages/vespa" }
+source = { editable = "common" }
 dependencies = [
     { name = "mistralai-search-toolkit" },
     { name = "mistralai-search-toolkit-plugins-vespa" },
@@ -921,7 +905,7 @@ dependencies = [
 requires-dist = [
     { name = "beautifulsoup4" },
     { name = "crawlee", extras = ["beautifulsoup", "httpx"], specifier = "==1.10.0" },
-    { name = "docstral-vespa", editable = "packages/vespa" },
+    { name = "docstral-vespa", editable = "common" },
     { name = "httpx" },
     { name = "mistralai-search-toolkit", extras = ["html-converter-markdownify"], specifier = "==0.0.13" },
     { name = "mistralai-workflows", specifier = "==3.13.0" },

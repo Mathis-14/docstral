@@ -8,15 +8,16 @@ version = "0.1.0"
 description = "MCP server for Docstral"
 requires-python = ">=3.13,<3.15"
 dependencies = [
-    "docstral-backend",
+    "docstral-vespa",
     "fastmcp==4.0.2",
+    "mistralai-search-toolkit==0.0.13",
     "pydantic[email]",
     "pydantic-settings",
     "starlette",
 ]
 
 [tool.uv.sources]
-docstral-backend = { workspace = true }
+docstral-vespa = { workspace = true }
 
 [project.scripts]
 docstral-mcp = "docstral_mcp.serve:main"

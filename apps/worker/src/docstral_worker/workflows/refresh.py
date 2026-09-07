@@ -6,15 +6,15 @@ from mistralai import workflows
 from mistralai.workflows.exceptions import ActivityError, WorkflowError
 
 with workflows.workflow.unsafe.imports_passed_through():
-    from docstral_worker.refresh import WORKFLOW_NAME
-    from docstral_worker.refresh.activities import (
+    from docstral_worker.crawler.urls import admit, canonicalize
+    from docstral_worker.models import PageResult, RefreshResult
+    from docstral_worker.workflows import WORKFLOW_NAME
+    from docstral_worker.workflows.activities import (
         delete_page,
         discover_urls,
         plan_deletions,
         sync_page,
     )
-    from docstral_worker.refresh.models import PageResult, RefreshResult
-    from docstral_worker.urls import admit, canonicalize
 
 
 @workflows.workflow.define(

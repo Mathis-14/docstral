@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import urlsplit
 
-from docstral_backend import RetrievedChunk
+from docstral_mcp.qa import RetrievedChunk
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evals.retrieval_dataset import (

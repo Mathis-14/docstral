@@ -1,7 +1,11 @@
 import httpx
 import pytest
-from docstral_worker.fetch import FetchError
-from docstral_worker.sitemap import SitemapParseError, fetch_sitemap, parse_sitemap
+from docstral_worker.crawler.fetch import FetchError
+from docstral_worker.crawler.sitemap import (
+    SitemapParseError,
+    fetch_sitemap,
+    parse_sitemap,
+)
 from worker_fixtures import DOCS, Services
 from worker_fixtures import services as services
 

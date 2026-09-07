@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from docstral_backend import (
+from docstral_mcp.qa import (
     DocumentationAnswerer,
     RetrievalRequest,
     RetrievalResponse,
@@ -179,7 +179,7 @@ async def test_native_ragas_receives_context_and_reference_separately(
     chunks = (
         await boundary.retrieve(RetrievalRequest(query=question.query, top_k=5))
     ).chunks
-    from docstral_backend import AnswerResponse, Citation
+    from docstral_mcp.qa import AnswerResponse, Citation
 
     case = CaseResult(
         question=question,
@@ -213,7 +213,7 @@ async def test_native_ragas_receives_context_and_reference_separately(
             assert all(
                 score.status == "skipped" and score.value is None for score in skipped
             )
-            from docstral_backend.answering import _ABSTENTION_MESSAGE
+            from docstral_mcp.qa.models import _ABSTENTION_MESSAGE
 
             abstained = await score_case(
                 case.model_copy(

@@ -22,8 +22,7 @@ The workflow history lives in Mistral; local execution still requires internet.
 Run `make refresh` to update the corpus explicitly. Ctrl+C stops the launched
 worker and MCP while preserving Vespa data. No schedule is created automatically.
 A partial refresh is printed with its failed URLs; MCP requires at least one
-confirmed indexed page. See the [worker guide](apps/worker/README.md) for settings,
-recovery and explicit offline snapshot commands.
+confirmed indexed page. See the [worker guide](apps/worker/README.md) for settings and recovery.
 
 `DOCSTRAL_ANSWER_MODEL` selects the answer model (default: `ministral-8b-2512`);
 restart MCP after changing it. Embeddings and the corpus are unchanged.
@@ -41,70 +40,19 @@ configurations unchanged. The command uses `DOCSTRAL_MCP_PORT` from `.env`
 Run `make vibe local` to register the server and then start the local environment.
 Restart Vibe and use `/mcp docstral` to check its tools.
 
-### Google OAuth (invited users)
+## Development
 
-Create a **Web application** OAuth client in
-[Google Auth Platform](https://console.cloud.google.com/auth/clients), with
-`http://localhost:8000/auth/callback` as the authorized redirect URI.
+Run `make check` for lint, format, typing and unit tests.
+Install local Git hooks once with `uv run pre-commit install`.
 
-Fill the OAuth settings from [.env.example](.env.example) in `.env`.
-Only verified addresses in `DOCSTRAL_ALLOWED_EMAILS` can use the tool;
-Google's test-user list is not the access control for these identity-only scopes.
+- `apps/mcp`: MCP transport, authentication and Python Q&A in `qa/`.
+- `apps/worker`: workflows, crawling and incremental indexing.
+- `common`: shared Vespa schema and index constructors.
 
-```sh
-# Server terminal (stop any existing MCP first)
-uv run --env-file .env docstral-mcp --auth google
-# Another terminal
-vibe mcp add docstral-google --url http://localhost:8000/mcp --transport streamable-http
-```
+The [system prompt](apps/mcp/src/docstral_mcp/qa/prompt.md) is bundled with MCP.
+It loads at startup; restart after editing it locally, or rebuild the deployed image.
 
-In Vibe, use `/mcp login docstral-google` if needed, then ask `ask_docs` a question
-and request all sources. Test outside the repository to avoid local-file context.
-
-Keep `FASTMCP_HOME` (`data/oauth`) and the secret signing key across restarts;
-Docker storage must be writable by UID 1000. This remains local, with one MCP
-instance. For remote access, see [GKE HTTPS setup](deployment/https.md).
-Invitations do not cap API spending. See [FastMCP OAuth](https://gofastmcp.com/integrations/google).
-
-## Docker images
-
-Build from the repository root (AMD64 is the GKE deployment target):
-
-```sh
-docker build --platform linux/amd64 \
-  -f deployment/docker/mcp.Dockerfile -t docstral-mcp:local .
-docker build --platform linux/amd64 \
-  -f deployment/docker/worker.Dockerfile -t docstral-worker:local .
-docker run --rm --platform linux/amd64 docstral-worker:local --help
-```
-
-With Docker Desktop and an indexed Vespa listening on the host's port 8080:
-
-```sh
-uv run --env-file .env docker run --rm --platform linux/amd64 \
-  --publish 127.0.0.1:8000:8000 --env MISTRAL_API_KEY \
-  docstral-mcp:local --vespa-endpoint http://host.docker.internal:8080
-```
-
-This serves `/mcp` without authentication. Images run as UID/GID 1000 and contain
-no corpus or secrets. Mount worker data at `/app/data`; run local ingestion on
-the host. See [native refresh](apps/worker/README.md) and
-[deployment](deployment/README.md). Cluster provisioning is separate.
-
-## Evaluation
-
-The [evaluation guide](evals/README.md) covers the reviewed development datasets,
-retrieval and Ragas metrics, and baseline reproduction commands.
-[Results](evals/RESULTS.md) compare the measured alternatives, timings,
-and limitations. Evaluations are local only, outside CI and production;
-experimental pipelines are not enabled in the application.
-
-## Architecture and development
-
-- `apps/worker`: crawling, extraction and incremental indexing.
-- `apps/backend`: retrieval and grounded Q&A, imported as a library by MCP.
-- `apps/mcp`: FastMCP server.
-- `packages/vespa`: shared schema and index constructor.
-- `deployment/local.py`: local process startup and explicit workflow routing.
-
-Run `uv run pre-commit install` once, then `make check` for local checks.
+See [worker operations](apps/worker/README.md),
+[OAuth and Docker](deployment/README.md#google-oauth-invited-users),
+[GKE deployment](deployment/README.md) and
+[evaluations](evals/README.md).

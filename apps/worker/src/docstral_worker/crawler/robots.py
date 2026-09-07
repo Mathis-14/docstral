@@ -1,8 +1,8 @@
 from crawlee.http_clients import HttpClient
 from protego import Protego
 
-from docstral_worker.fetch import FetchError, FetchHttpStatusError, get
-from docstral_worker.urls import DOCS_HOST
+from docstral_worker.crawler.fetch import FetchError, FetchHttpStatusError, get
+from docstral_worker.crawler.urls import DOCS_HOST
 
 ROBOTS_AGENT = "Docstral"
 ROBOTS_URL = f"https://{DOCS_HOST}/robots.txt"

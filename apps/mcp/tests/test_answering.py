@@ -1,14 +1,16 @@
 import json
+import subprocess
+import sys
 
 import pytest
-from docstral_backend import (
+from docstral_mcp.qa import (
     AnsweringError,
     DocumentationAnswerer,
     RetrievalRequest,
     RetrievalResponse,
     RetrievedChunk,
 )
-from docstral_backend.answering import _AnswerDraft
+from docstral_mcp.qa.models import _AnswerDraft
 from mistralai.search.toolkit.llm.chat import ChatMessage, ChatParseResult
 from pydantic import ValidationError
 
@@ -17,6 +19,24 @@ EXPECTED_ABSTENTION = (
     "I couldn't find enough information in the Mistral documentation to answer "
     "this question."
 )
+
+
+def test_qa_import_does_not_load_mcp_transport() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            "import sys; import docstral_mcp.qa; "
+            "assert 'docstral_mcp.server' not in sys.modules; "
+            "assert 'fastmcp' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 class _FakeRetriever:
@@ -75,33 +95,17 @@ class _FakeChat:
         return ChatParseResult(parsed=self.draft, total_tokens=10)
 
 
-async def test_answer_uses_structured_evidence_and_builds_page_citations() -> None:
-    shared_url = f"{DOCS}/shared"
+async def test_answer_sends_question_and_labelled_evidence_to_model() -> None:
     chunks = (
-        _chunk("chunk-1", shared_url, "Shared", "First"),
-        _chunk("chunk-2", shared_url, "Shared", "Second"),
-        _chunk("chunk-3", f"{DOCS}/other", "Other", "Third"),
+        _chunk("chunk-1", f"{DOCS}/first", "First guide", "First evidence"),
+        _chunk("chunk-2", f"{DOCS}/second", "Second guide", "Second evidence"),
     )
     retriever = _FakeRetriever(chunks)
-    chat = _FakeChat(
-        _AnswerDraft(answer="Grounded answer.", evidence_ids=("E3", "E1", "E2"))
-    )
+    chat = _FakeChat(_AnswerDraft(answer="Grounded answer.", evidence_ids=("E2",)))
 
-    response = await DocumentationAnswerer(retriever, chat, top_k=7).answer(
-        "How does it work?"
-    )
+    await DocumentationAnswerer(retriever, chat, top_k=7).answer("How does it work?")
 
     assert retriever.calls == [RetrievalRequest(query="How does it work?", top_k=7)]
-    assert response.answer == "Grounded answer."
-    assert response.abstained is False
-    assert [(citation.title, str(citation.url)) for citation in response.citations] == [
-        ("Other", f"{DOCS}/other"),
-        ("Shared", shared_url),
-    ]
-    assert chat.response_format is _AnswerDraft
-    assert chat.model == "ministral-8b-2512"
-    assert chat.temperature == 0.0
-    assert chat.max_tokens == 1024
     assert chat.messages is not None
     system_message, user_message = chat.messages
     assert system_message.role == "system"
@@ -112,11 +116,47 @@ async def test_answer_uses_structured_evidence_and_builds_page_citations() -> No
     assert json.loads(user_message.content) == {
         "question": "How does it work?",
         "evidence": [
-            {"id": "E1", "title": "Shared", "content": "First"},
-            {"id": "E2", "title": "Shared", "content": "Second"},
-            {"id": "E3", "title": "Other", "content": "Third"},
+            {"id": "E1", "title": "First guide", "content": "First evidence"},
+            {"id": "E2", "title": "Second guide", "content": "Second evidence"},
         ],
     }
+
+
+async def test_answer_deduplicates_citations_in_model_evidence_order() -> None:
+    shared_url = f"{DOCS}/shared"
+    chunks = (
+        _chunk("chunk-1", shared_url, "Shared", "First"),
+        _chunk("chunk-2", shared_url, "Shared", "Second"),
+        _chunk("chunk-3", f"{DOCS}/other", "Other", "Third"),
+    )
+    chat = _FakeChat(
+        _AnswerDraft(answer="Grounded answer.", evidence_ids=("E3", "E1", "E2"))
+    )
+
+    response = await DocumentationAnswerer(
+        _FakeRetriever(chunks), chat, top_k=3
+    ).answer("How does it work?")
+
+    assert response.answer == "Grounded answer."
+    assert response.abstained is False
+    assert [(citation.title, str(citation.url)) for citation in response.citations] == [
+        ("Other", f"{DOCS}/other"),
+        ("Shared", shared_url),
+    ]
+
+
+async def test_answer_uses_default_generation_settings() -> None:
+    chunk = _chunk("chunk-1", f"{DOCS}/page", "Page", "Content")
+    chat = _FakeChat(_AnswerDraft(answer="Grounded answer.", evidence_ids=("E1",)))
+
+    await DocumentationAnswerer(_FakeRetriever((chunk,)), chat, top_k=1).answer(
+        "Question?"
+    )
+
+    assert chat.response_format is _AnswerDraft
+    assert chat.model == "ministral-8b-2512"
+    assert chat.temperature == 0.0
+    assert chat.max_tokens == 1024
 
 
 async def test_answer_uses_selected_model() -> None:

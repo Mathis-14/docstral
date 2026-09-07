@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from docstral_worker.crawl import CrawlCounts, CrawlEntry, CrawlResult
+from docstral_worker.crawler.crawl import CrawlCounts, CrawlEntry, CrawlResult
 from docstral_worker.snapshot import SnapshotReadError, current_snapshot, write_snapshot
 from worker_fixtures import DOCS, snapshot
 

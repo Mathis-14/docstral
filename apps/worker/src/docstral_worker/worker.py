@@ -4,8 +4,8 @@ from logging import LogRecord
 from mistralai import workflows
 
 from docstral_worker import IngestionError
-from docstral_worker.refresh.config import refresh_config
-from docstral_worker.refresh.workflow import RefreshDocumentation
+from docstral_worker.config import refresh_config
+from docstral_worker.workflows.refresh import RefreshDocumentation
 
 
 def _redact_vespa_exceptions(record: LogRecord) -> bool:

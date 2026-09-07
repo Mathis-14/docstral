@@ -1,8 +1,6 @@
-"""Expose Docstral's grounded answering boundary through MCP."""
-
+from functools import partial
 from typing import Annotated, Protocol
 
-from docstral_backend import AnswerResponse
 from fastmcp import FastMCP
 from fastmcp.server.middleware import AuthMiddleware
 from fastmcp.tools import ToolResult
@@ -10,21 +8,39 @@ from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from docstral_mcp.auth import GoogleAuthConfig, build_google_provider
+from docstral_mcp.auth import build_google_provider, is_invited
+from docstral_mcp.config import GoogleAuthConfig
+from docstral_mcp.qa import AnswerResponse
 
 
 class _Answerer(Protocol):
     async def answer(self, question: str) -> AnswerResponse: ...
 
 
+def _to_tool_result(response: AnswerResponse) -> ToolResult:
+    content = response.answer
+    if response.citations:
+        sources = "\n".join(
+            f"- [{citation.title}]({citation.url})" for citation in response.citations
+        )
+        content = f"{content}\n\nSources:\n{sources}"
+    return ToolResult(
+        content=content,
+        structured_content=response.model_copy(update={"answer": content}).model_dump(
+            mode="json"
+        ),
+    )
+
+
 def create_server(
     answerer: _Answerer, *, oauth: GoogleAuthConfig | None = None
 ) -> FastMCP:
-    """Create the read-only Docstral MCP server."""
     server = FastMCP(
         "Docstral",
         auth=build_google_provider(oauth) if oauth is not None else None,
-        middleware=[AuthMiddleware(auth=oauth.is_invited)] if oauth is not None else [],
+        middleware=[AuthMiddleware(auth=partial(is_invited, oauth))]
+        if oauth is not None
+        else [],
         instructions=(
             "Use ask_docs to answer questions about Mistral's public documentation. "
             "Present its answer and citations without adding factual content."
@@ -33,7 +49,6 @@ def create_server(
 
     @server.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> PlainTextResponse:
-        """Report HTTP availability without calling paid or external dependencies."""
         return PlainTextResponse("ok")
 
     @server.tool(
@@ -57,20 +72,7 @@ def create_server(
             ),
         ],
     ) -> ToolResult:
-        """Answer from indexed documentation or abstain when evidence is insufficient."""
         response = await answerer.answer(question)
-        content = response.answer
-        if response.citations:
-            sources = "\n".join(
-                f"- [{citation.title}]({citation.url})"
-                for citation in response.citations
-            )
-            content = f"{content}\n\nSources:\n{sources}"
-        return ToolResult(
-            content=content,
-            structured_content=response.model_copy(
-                update={"answer": content}
-            ).model_dump(mode="json"),
-        )
+        return _to_tool_result(response)
 
     return server

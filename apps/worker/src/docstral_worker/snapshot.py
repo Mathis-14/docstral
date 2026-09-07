@@ -7,8 +7,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from docstral_worker import IngestionError
-from docstral_worker.crawl import SHA256_PATTERN, CrawlResult
-from docstral_worker.urls import admit, canonicalize
+from docstral_worker.crawler.crawl import SHA256_PATTERN, CrawlResult
+from docstral_worker.crawler.urls import admit, canonicalize
 
 
 class SnapshotReadError(IngestionError):

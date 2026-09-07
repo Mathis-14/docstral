@@ -1,21 +1,22 @@
+import json
 import math
+from hashlib import sha256
+from importlib.metadata import version
 from typing import Protocol
 
 from mistralai.search.toolkit.document import Document
 from mistralai.search.toolkit.ingestion import File
 from mistralai.search.toolkit.ingestion.processor import DocumentProcessor
+from mistralai.search.toolkit.ingestion.text_splitters import (
+    MarkdownTokenTextSplitter,
+    MarkdownTokenTextSplitterConfig,
+)
 
 from docstral_worker import IngestionError
-from docstral_worker.extract import ExtractionError
-from docstral_worker.ingest import (
-    DocsExtractor,
-    PipelineConfig,
-    build_splitter,
-    document_fingerprint,
-    processing_fingerprint,
-)
-from docstral_worker.refresh.corpus import Corpus
-from docstral_worker.refresh.models import DownloadedPage, PageResult, PageState
+from docstral_worker.config import PipelineConfig
+from docstral_worker.corpus import Corpus
+from docstral_worker.extract import DocsChunkMetadata, DocsExtractor, ExtractionError
+from docstral_worker.models import DownloadedPage, PageResult, PageState
 
 
 class DocumentEmbedder(DocumentProcessor, Protocol):
@@ -83,3 +84,45 @@ def validate_embeddings(chunks: Document, embedded: Document) -> None:
         for chunk in embedded.chunks
     ):
         raise IngestionError("Every chunk requires 1024 finite embedding values")
+
+
+def build_splitter(config: PipelineConfig) -> MarkdownTokenTextSplitter:
+    return MarkdownTokenTextSplitter(
+        MarkdownTokenTextSplitterConfig(
+            chunk_size=config.chunk_size,
+            chunk_max_size=config.chunk_max_size,
+            chunk_overlap=config.chunk_overlap,
+        )
+    )
+
+
+def processing_fingerprint(config: PipelineConfig, model_name: str) -> str:
+    return _hash_json(
+        {
+            "pipeline": config.model_dump(mode="json"),
+            "toolkit": version("mistralai-search-toolkit"),
+            "embedding_model": model_name,
+            "embedding_dimensions": 1024,
+        }
+    )
+
+
+def document_fingerprint(document: Document, processing_hash: str) -> str:
+    metadata = document.chunks[0].metadata
+    if not isinstance(metadata, DocsChunkMetadata):
+        raise IngestionError("Article metadata is missing")
+    return _hash_json(
+        {
+            "content_hash": metadata.content_hash,
+            "title": metadata.title,
+            "processing_hash": processing_hash,
+        }
+    )
+
+
+def _hash_json(value: dict[str, object]) -> str:
+    return sha256(
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode()
+    ).hexdigest()

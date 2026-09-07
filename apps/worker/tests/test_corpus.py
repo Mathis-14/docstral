@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import httpx
 import pytest
 from docstral_worker import IngestionError
-from docstral_worker.refresh.corpus import VespaCorpus
+from docstral_worker.corpus import VespaCorpus
 from mistralai.search.toolkit.document import compute_id
 from mistralai.search.toolkit.plugins.vespa import VespaClient, VespaClientConfig
 

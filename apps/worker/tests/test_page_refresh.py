@@ -1,7 +1,7 @@
 import httpx
 import pytest
-from docstral_worker.refresh.activities import sync_page
-from docstral_worker.refresh.models import PageResult
+from docstral_worker.models import PageResult
+from docstral_worker.workflows.activities import sync_page
 from temporalio.testing import ActivityEnvironment
 from worker_fixtures import Services, html
 from worker_fixtures import services as services
@@ -99,7 +99,7 @@ async def test_failed_vespa_cleanup_does_not_leak_secrets_in_logs(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from docstral_worker.refresh.worker import run_worker
+    from docstral_worker.worker import run_worker
     from mistralai import workflows
     from mistralai.workflows.exceptions import WorkflowError
     from temporalio.api.failure.v1 import Failure

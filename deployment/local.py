@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from docstral_vespa import PAGE_COLLECTION_NAME, index_for_client
 from docstral_worker import IngestionError
-from docstral_worker.refresh.models import PageState, RefreshResult
+from docstral_worker.models import PageState, RefreshResult
 from mistralai.client import Mistral
 from mistralai.client.errors import SDKError
 from mistralai.search.toolkit.plugins.vespa import VespaClient, VespaClientConfig
@@ -173,7 +173,7 @@ def migrate(config: LocalConfig, environment: dict[str, str]) -> None:
             "mistral-vespa",
             "migrate",
             "--app-dir",
-            str(ROOT / "packages/vespa/src/docstral_vespa"),
+            str(ROOT / "common/src/docstral_vespa"),
             "--config-server",
             f"http://localhost:{config.config_port}",
             "--query-port",

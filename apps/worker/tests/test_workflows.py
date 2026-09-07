@@ -4,8 +4,8 @@ import sys
 from datetime import UTC, datetime
 
 import pytest
-from docstral_worker.refresh.models import RefreshResult
-from docstral_worker.refresh.workflow import RefreshDocumentation
+from docstral_worker.models import RefreshResult
+from docstral_worker.workflows.refresh import RefreshDocumentation
 from mistralai import workflows
 from temporalio.testing import ActivityEnvironment
 from worker_fixtures import Services
@@ -141,7 +141,7 @@ finally:
 def test_workflow_loads_in_mistrals_deterministic_sandbox() -> None:
     script = """
 import asyncio
-from docstral_worker.refresh.workflow import RefreshDocumentation
+from docstral_worker.workflows.refresh import RefreshDocumentation
 from mistralai.workflows.core.sandbox import get_sandbox_restrictions
 from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner
 from temporalio.workflow import _Definition

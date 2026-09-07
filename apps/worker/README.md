@@ -111,3 +111,14 @@ indexing fingerprints are unchanged.
 
 Checks: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`,
 `uv run pytest`, `uv run pre-commit run --all-files`.
+
+## Code map
+
+- `workflows/`: native refresh activities and explicit snapshot operations.
+- `crawler/`: Crawlee downloads, sitemap, robots and URL rules.
+- `extract.py`, `indexing.py`, `corpus.py`: page conversion and incremental writes.
+- `snapshot.py`: local snapshot models and storage.
+- `config.py`: configuration; `models.py`: data exchanged between tasks.
+- `worker.py`: native worker startup; `cli.py`: command-line entry point.
+
+Shared Vespa schemas and index constructors live in `common/`.
