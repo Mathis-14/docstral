@@ -198,7 +198,13 @@ Create a **Web application** OAuth client in
 `http://localhost:8000/auth/callback` as the authorized redirect URI.
 
 Fill the OAuth settings from [.env.example](../.env.example) in `.env`.
-Only verified addresses in `DOCSTRAL_ALLOWED_EMAILS` can use the tool;
+Only verified addresses in `DOCSTRAL_ALLOWED_EMAILS`, or whose exact domain is
+listed in optional `DOCSTRAL_ALLOWED_DOMAINS`, can use the tool. Both settings
+accept comma-separated values. For example, `DOCSTRAL_ALLOWED_DOMAINS=mistral.ai`
+allows that domain, excluding subdomains. Keep at least one individual invite.
+On GKE, set these keys in Secret `mcp-google` before deploying the image that
+supports domains. If changed after deployment, restart Deployment `mcp` to load
+the new values.
 Google's test-user list is not the access control for these identity-only scopes.
 
 ```sh

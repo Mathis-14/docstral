@@ -26,6 +26,7 @@ def oauth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> GoogleAuthConfig:
         "DOCSTRAL_GOOGLE_CLIENT_SECRET": "google-secret",
         "DOCSTRAL_OAUTH_BASE_URL": ORIGIN,
         "DOCSTRAL_ALLOWED_EMAILS": " Invite@Example.com ",
+        "DOCSTRAL_ALLOWED_DOMAINS": "",
         "DOCSTRAL_OAUTH_SIGNING_KEY": "test-signing-material-not-a-real-key",
     }.items():
         monkeypatch.setenv(key, value)
@@ -58,6 +59,12 @@ class _Answerer:
         ("DOCSTRAL_ALLOWED_EMAILS", ""),
         ("DOCSTRAL_ALLOWED_EMAILS", "*@example.com"),
         ("DOCSTRAL_ALLOWED_EMAILS", "invite@example.com,"),
+        ("DOCSTRAL_ALLOWED_DOMAINS", "*@mistral.ai"),
+        ("DOCSTRAL_ALLOWED_DOMAINS", "@mistral.ai"),
+        ("DOCSTRAL_ALLOWED_DOMAINS", "mistral.ai,"),
+        ("DOCSTRAL_ALLOWED_DOMAINS", "https://mistral.ai"),
+        ("DOCSTRAL_ALLOWED_DOMAINS", "mistral.ai/path"),
+        ("DOCSTRAL_ALLOWED_DOMAINS", "mistral_ai"),
         ("DOCSTRAL_OAUTH_BASE_URL", "http://public.example.com"),
         ("DOCSTRAL_OAUTH_BASE_URL", "https://user:secret@example.com"),
         ("DOCSTRAL_OAUTH_BASE_URL", "https://example.com/mcp"),
@@ -189,16 +196,38 @@ async def _login(client: httpx2.AsyncClient) -> OAuthToken:
 
 @pytest.mark.parametrize("origin", [ORIGIN, "https://mcp.example.com"])
 @pytest.mark.parametrize(
-    ("email", "verified", "audience", "google_status", "permitted"),
+    ("email", "verified", "audience", "google_status", "domains", "permitted"),
     [
-        ("INVITE@example.com", True, "google-client", 200, True),
-        ("invite@example.com", "true", "google-client", 200, True),
-        ("outsider@example.com", True, "google-client", 200, False),
-        ("invite@example.com", "false", "google-client", 200, False),
-        ("invite@example.com", False, "google-client", 200, False),
-        ("invite@example.com", None, "google-client", 200, False),
-        ("invite@example.com", True, "another-google-client", 200, False),
-        ("invite@example.com", True, "google-client", 503, False),
+        ("INVITE@example.com", True, "google-client", 200, "", True),
+        ("invite@example.com", "true", "google-client", 200, "", True),
+        ("outsider@example.com", True, "google-client", 200, "", False),
+        ("invite@example.com", "false", "google-client", 200, "", False),
+        ("invite@example.com", False, "google-client", 200, "", False),
+        ("invite@example.com", None, "google-client", 200, "", False),
+        ("invite@example.com", True, "another-google-client", 200, "", False),
+        ("invite@example.com", True, "google-client", 503, "", False),
+        ("colleague@MISTRAL.AI", True, "google-client", 200, " Mistral.AI ", True),
+        ("colleague@mistral.ai", True, "google-client", 200, "", False),
+        ("colleague@mistral.ai", False, "google-client", 200, "mistral.ai", False),
+        ("colleague@sub.mistral.ai", True, "google-client", 200, "mistral.ai", False),
+        ("colleague@notmistral.ai", True, "google-client", 200, "mistral.ai", False),
+        (
+            "colleague@mistral.ai.evil.com",
+            True,
+            "google-client",
+            200,
+            "mistral.ai",
+            False,
+        ),
+        ("@mistral.ai", True, "google-client", 200, "mistral.ai", False),
+        (
+            "colleague@EXAMPLE.ORG",
+            True,
+            "google-client",
+            200,
+            "mistral.ai, example.org",
+            True,
+        ),
     ],
 )
 async def test_google_http_access_and_restart(
@@ -209,10 +238,12 @@ async def test_google_http_access_and_restart(
     verified: bool | str | None,
     audience: str,
     google_status: int,
+    domains: str,
     permitted: bool,
     origin: str,
 ) -> None:
     monkeypatch.setenv("DOCSTRAL_OAUTH_BASE_URL", origin)
+    monkeypatch.setenv("DOCSTRAL_ALLOWED_DOMAINS", domains)
     oauth = GoogleAuthConfig()
 
     async def google(

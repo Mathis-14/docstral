@@ -19,8 +19,10 @@ def is_invited(config: GoogleAuthConfig, context: AuthContext) -> bool:
         return False
     email = context.token.claims.get("email")
     verified = context.token.claims.get("email_verified")
-    return (
-        (verified is True or verified == "true")
-        and isinstance(email, str)
-        and email.lower() in config.allowed_emails
+    if not isinstance(email, str) or not (verified is True or verified == "true"):
+        return False
+    email = email.lower()
+    local, separator, domain = email.partition("@")
+    return email in config.allowed_emails or (
+        bool(local and separator) and domain in config.allowed_domains
     )

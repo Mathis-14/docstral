@@ -114,7 +114,7 @@ See the [results and limitations](evals/RESULTS.md) and
 
 GKE runs separate MCP and worker images with persistent Vespa storage. Only MCP
 is exposed through a public HTTPS Gateway with Google-managed TLS and Google
-OAuth; only verified email addresses in the invitation allowlist can call the tool.
+OAuth; verified identities must match the configured email or exact-domain allowlist.
 Deployment does not populate the corpus or enable a schedule automatically.
 
 - [GKE deployment](deployment/README.md): configuration, images, rollout and recovery.
