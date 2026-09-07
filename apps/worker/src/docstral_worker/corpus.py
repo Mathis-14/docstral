@@ -8,7 +8,7 @@ from mistralai.search.toolkit.search.errors import DocumentNotFoundError
 from pydantic import ValidationError
 
 from docstral_worker import IngestionError
-from docstral_worker.refresh.models import PageState, SourceIdentity
+from docstral_worker.models import PageState, SourceIdentity
 
 
 class Corpus(Protocol):

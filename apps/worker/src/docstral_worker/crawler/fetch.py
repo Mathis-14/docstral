@@ -7,7 +7,7 @@ from crawlee import Request
 from crawlee.http_clients import HttpClient, HttpResponse, HttpxHttpClient
 
 from docstral_worker import IngestionError, _safe_url
-from docstral_worker.urls import DOCS_HOST, is_docs_url
+from docstral_worker.crawler.urls import DOCS_HOST, is_docs_url
 
 USER_AGENT = "Docstral/0.1 (+https://github.com/Mathis-14/docstral)"
 TIMEOUT = timedelta(seconds=30)

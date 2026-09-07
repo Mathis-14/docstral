@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from docstral_worker.crawl import crawl
+from docstral_worker.crawler.crawl import crawl
 from worker_fixtures import DOCS, Services
 from worker_fixtures import services as services
 

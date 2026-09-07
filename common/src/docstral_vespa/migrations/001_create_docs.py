@@ -1,5 +1,3 @@
-"""Create the chunk-level documentation index."""
-
 from typing import override
 
 from mistralai.search.toolkit.embedding import MistralEmbeddingPreset
@@ -17,8 +15,6 @@ from mistralai.search.toolkit.plugins.vespa.migration import (
 
 
 class CreateDocs(VespaMigration):
-    """Define Docstral's first Vespa schema."""
-
     @override
     def migrate(self) -> None:
         set_app_name("docstral")

@@ -1,12 +1,18 @@
-"""Convert the stored pages of a snapshot to Markdown."""
-
 from hashlib import sha256
-from pathlib import Path
-from time import monotonic
+from typing import override
 
-import structlog
 from bs4 import BeautifulSoup, Tag
 from mistralai.search.toolkit.common.text import sanitize_text
+from mistralai.search.toolkit.context import IngestContext
+from mistralai.search.toolkit.document import (
+    Document,
+    DocumentChunk,
+    DocumentChunkMetadata,
+    compute_char_locator,
+    compute_id,
+)
+from mistralai.search.toolkit.ingestion import File
+from mistralai.search.toolkit.ingestion.extractors.base import DocumentExtractor
 from mistralai.search.toolkit.ingestion.extractors.html_converter import (
     DEFAULT_IGNORE_CLASSES,
     MarkdownifyConverter,
@@ -14,15 +20,14 @@ from mistralai.search.toolkit.ingestion.extractors.html_converter import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from docstral_worker import IngestionError, _safe_url
-from docstral_worker.crawl import SHA256_PATTERN
-from docstral_worker.snapshot import CurrentSnapshot, page_slug
+from docstral_worker.crawler.crawl import SHA256_PATTERN
 
 _TITLE_SUFFIX = " | Mistral Docs"
 _CODE_LANGUAGES = frozenset({"curl", "python"})
 
 
 class ExtractionError(IngestionError):
-    """Raised when a documentation page cannot be extracted."""
+    pass
 
 
 class Section(BaseModel):
@@ -44,17 +49,7 @@ class ExtractedPage(BaseModel):
     chars: int = Field(ge=0)
 
 
-class ExtractResult(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    converted: int = Field(ge=0)
-    failed: int = Field(ge=0)
-    duration_seconds: float = Field(ge=0.0)
-
-
 class DocsHtmlConverter:
-    """Select Docstral's content subtree before toolkit conversion."""
-
     def __init__(self) -> None:
         self._converter = MarkdownifyConverter(
             ignore_classes=[*DEFAULT_IGNORE_CLASSES, "^hidden$"]
@@ -78,7 +73,6 @@ _CONVERTER = DocsHtmlConverter()
 
 
 def outline(html: str) -> tuple[str, tuple[Section, ...]]:
-    """Read the page title and anchored heading outline from rendered HTML."""
     soup = BeautifulSoup(html, "html.parser")
     if soup.title is None:
         raise ExtractionError("no title")
@@ -96,7 +90,6 @@ def outline(html: str) -> tuple[str, tuple[Section, ...]]:
 
 
 def extract_page(url: str, html: bytes) -> ExtractedPage:
-    """Extract one UTF-8 HTML page to auditable Markdown."""
     try:
         decoded = html.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
@@ -119,55 +112,6 @@ def extract_page(url: str, html: bytes) -> ExtractedPage:
         sections=sections,
         content_hash=sha256(markdown.encode()).hexdigest(),
         chars=len(markdown),
-    )
-
-
-def extract_snapshot(snapshot: CurrentSnapshot, destination: Path) -> ExtractResult:
-    """Convert every stored page in a raw snapshot and write its Markdown."""
-    if destination.exists():
-        raise ExtractionError(f"Extraction output {str(destination)!r} already exists")
-    logger = structlog.get_logger(__name__)
-    started_at = monotonic()
-    converted = 0
-    failed = 0
-    try:
-        pages_directory = destination / "pages"
-        pages_directory.mkdir(parents=True)
-        for entry in snapshot.manifest.pages:
-            page_started_at = monotonic()
-            try:
-                page = extract_page(entry.url, snapshot.get(entry.url))
-                slug = page_slug(entry.url)
-                (pages_directory / f"{slug}.md").write_text(
-                    page.markdown, encoding="utf-8"
-                )
-            except IngestionError as exc:
-                failed += 1
-                logger.info(
-                    "extraction_page",
-                    url=entry.url,
-                    decision="failed",
-                    duration_ms=round((monotonic() - page_started_at) * 1_000, 3),
-                    error_type=type(exc).__name__,
-                    error_message=str(exc),
-                )
-                continue
-            converted += 1
-            logger.info(
-                "extraction_page",
-                url=entry.url,
-                decision="converted",
-                duration_ms=round((monotonic() - page_started_at) * 1_000, 3),
-                chars=page.chars,
-            )
-    except OSError as exc:
-        raise ExtractionError(
-            f"Cannot write extraction output {str(destination)!r}: {exc}"
-        ) from exc
-    return ExtractResult(
-        converted=converted,
-        failed=failed,
-        duration_seconds=monotonic() - started_at,
     )
 
 
@@ -199,3 +143,39 @@ def _heading_anchor(heading: Tag) -> str | None:
         parent_anchor = parent.get("id")
         return parent_anchor if isinstance(parent_anchor, str) else None
     return None
+
+
+_DEFAULT_CONTEXT = IngestContext()
+
+
+class DocsChunkMetadata(DocumentChunkMetadata):
+    model_config = ConfigDict(frozen=True)
+
+    title: str
+    content_hash: str
+
+
+class DocsExtractor(DocumentExtractor):
+    @override
+    async def extract(
+        self, file: File, context: IngestContext = _DEFAULT_CONTEXT
+    ) -> Document:
+        page = extract_page(file.source_id, file.raw)
+        return Document(
+            source_id=page.url,
+            content=page.markdown,
+            chunks=[
+                DocumentChunk(
+                    source_id=page.url,
+                    locator=compute_char_locator(0, page.chars),
+                    start_offset=0,
+                    end_offset=page.chars,
+                    parent_ref=compute_id(page.url),
+                    content=page.markdown,
+                    metadata=DocsChunkMetadata(
+                        title=page.title,
+                        content_hash=page.content_hash,
+                    ),
+                )
+            ],
+        )

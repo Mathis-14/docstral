@@ -1,18 +1,18 @@
-"""Read-only documentation Q&A for Docstral."""
-
-from docstral_backend.answering import (
+from docstral_mcp.qa.answering import (
     AnsweringError,
-    AnswerResponse,
-    Citation,
     DocumentationAnswerer,
     build_documentation_answerer,
 )
-from docstral_backend.retrieval import (
-    DocumentationRetriever,
-    RetrievalError,
+from docstral_mcp.qa.models import (
+    AnswerResponse,
+    Citation,
     RetrievalRequest,
     RetrievalResponse,
     RetrievedChunk,
+)
+from docstral_mcp.qa.retrieval import (
+    DocumentationRetriever,
+    RetrievalError,
     build_documentation_retriever,
 )
 

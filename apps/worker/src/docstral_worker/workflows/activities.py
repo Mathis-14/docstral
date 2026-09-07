@@ -13,12 +13,13 @@ from mistralai.search.toolkit.embedding import MODEL_1024_EMBEDDING, MistralEmbe
 from mistralai.search.toolkit.plugins.vespa import VespaClient, VespaClientConfig
 from mistralai.workflows.exceptions import WorkflowError
 
-from docstral_worker.fetch import is_transient
-from docstral_worker.refresh.config import refresh_config
-from docstral_worker.refresh.corpus import VespaCorpus
-from docstral_worker.refresh.crawler import discover, download
-from docstral_worker.refresh.indexing import PageIndexer
-from docstral_worker.refresh.models import DiscoveryResult, PageResult
+from docstral_worker.config import refresh_config
+from docstral_worker.corpus import VespaCorpus
+from docstral_worker.crawler.crawl import download
+from docstral_worker.crawler.fetch import is_transient
+from docstral_worker.crawler.sitemap import fetch_sitemap
+from docstral_worker.indexing import PageIndexer
+from docstral_worker.models import DiscoveryResult, PageResult
 
 
 def retryable(error: BaseException) -> bool:
@@ -96,7 +97,13 @@ async def corpus_client() -> AsyncIterator[VespaCorpus]:
 )
 async def discover_urls() -> DiscoveryResult:
     async with activity_scope("discover_urls"):
-        return await discover(refresh_config())
+        config = refresh_config()
+        return DiscoveryResult(
+            urls=await fetch_sitemap(config.request_delay),
+            concurrency=config.concurrency,
+            max_pages=config.max_pages,
+            request_delay=config.request_delay,
+        )
 
 
 @workflows.activity(
@@ -108,7 +115,7 @@ async def discover_urls() -> DiscoveryResult:
 )
 async def sync_page(url: str) -> PageResult:
     async with activity_scope("sync_page", url):
-        page = await download(url, refresh_config())
+        page = await download(url, delay=refresh_config().request_delay)
         if isinstance(page, PageResult):
             return page
         async with AsyncExitStack() as resources:

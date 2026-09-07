@@ -1,8 +1,8 @@
 import httpx
 import httpx2
 import pytest
-from docstral_worker.crawl import crawl
-from docstral_worker.fetch import USER_AGENT, FetchError, get, http_client
+from docstral_worker.crawler.crawl import crawl
+from docstral_worker.crawler.fetch import USER_AGENT, FetchError, get, http_client
 from worker_fixtures import DOCS, Services
 from worker_fixtures import services as services
 

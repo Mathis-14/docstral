@@ -2,7 +2,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 
 class IngestionError(Exception):
-    """Base error for documentation ingestion."""
+    pass
 
 
 def _safe_url(url: str) -> str:

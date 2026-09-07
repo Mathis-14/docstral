@@ -33,7 +33,7 @@ environment variables.
 
 - Python 3.13, `uv` workspace, hatchling. Applications live under `apps/`,
 each with its own `pyproject.toml`, `src/` and `tests/`. Shared code is
-extracted into `packages/` only when two applications actually share it.
+kept in `common/` only when both applications actually share it.
 - Ruff for lint and format, mypy strict, pytest.
 - Dependencies are pinned in `uv.lock`. Upgrading Search Toolkit or its Vespa
 plugin is a dedicated PR.
@@ -365,3 +365,20 @@ plus the two latest complete snapshots and latest failed snapshot.
   explicitly isolated local deployment; reuse confirmed corpus data and active
   executions, with make refresh for explicit updates. Offline snapshot ingestion
   shares the page indexer. No automatic scheduling or pending marker is added.
+
+- D028 — Keep only two applications: `mcp` owns the MCP transport and its Python
+  Q&A package, while `worker` owns ingestion. Move the existing `docstral_vespa`
+  package to `common/`, preserving its distribution, import name and migrations.
+  Worker workflows assemble crawling, extraction and page indexing; these
+  components never import orchestration. Group configuration per application
+  and keep task-specific models with their task. Why: deployment responsibilities
+  and imports match actual consumers without a separate backend package or
+  generic shared models. This replaces the layout prescriptions of D009 and
+  D011; the two runtime images of D016 remain.
+- D029 — Bundle the unchanged system prompt as `docstral_mcp/qa/prompt.md`,
+  loaded once when constructing an answerer with an explicit error if the
+  resource is missing, unreadable or empty. Keep generation defaults in MCP
+  configuration and the fixed abstention with its response validation. Why:
+  prompt text is independently readable while startup, model selection and
+  grounded output retain their existing contracts. Include the prompt in
+  evaluation fingerprints; AI Registry integration is deferred.

@@ -5,10 +5,8 @@ on:
     branches: [main]
     paths:
       - "apps/mcp/**"
-      - "apps/backend/**"
-      - "packages/vespa/**"
+      - "common/**"
       - "apps/*/pyproject.toml"
-      - "packages/*/pyproject.toml"
       - "pyproject.toml"
       - "uv.lock"
       - ".dockerignore"
@@ -19,10 +17,8 @@ on:
     branches: [main]
     paths:
       - "apps/mcp/**"
-      - "apps/backend/**"
-      - "packages/vespa/**"
+      - "common/**"
       - "apps/*/pyproject.toml"
-      - "packages/*/pyproject.toml"
       - "pyproject.toml"
       - "uv.lock"
       - ".dockerignore"
@@ -70,7 +66,7 @@ jobs:
         run: |
           docker run --rm --network none docstral-mcp:ci --help
           docker run --rm --network none --entrypoint python docstral-mcp:ci \
-            -c 'import os; import docstral_backend.answering; import docstral_mcp.server; import docstral_vespa; assert os.getuid() == 1000'
+            -c 'import os; from docstral_mcp.qa.answering import _load_system_prompt; import docstral_mcp.server; import docstral_vespa; assert _load_system_prompt().strip(); assert os.getuid() == 1000'
 
   publish:
     if: >-
@@ -132,7 +128,7 @@ jobs:
         run: |
           docker run --rm --network none docstral-mcp:ci --help
           docker run --rm --network none --entrypoint python docstral-mcp:ci \
-            -c 'import os; import docstral_backend.answering; import docstral_mcp.server; import docstral_vespa; assert os.getuid() == 1000'
+            -c 'import os; from docstral_mcp.qa.answering import _load_system_prompt; import docstral_mcp.server; import docstral_vespa; assert _load_system_prompt().strip(); assert os.getuid() == 1000'
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3

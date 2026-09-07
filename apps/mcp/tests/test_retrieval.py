@@ -1,5 +1,5 @@
 import pytest
-from docstral_backend import (
+from docstral_mcp.qa import (
     DocumentationRetriever,
     RetrievalError,
     RetrievalRequest,

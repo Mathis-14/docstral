@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from docstral_backend import (
+from docstral_mcp.qa import (
     AnswerResponse,
     DocumentationAnswerer,
     RetrievalRequest,
@@ -26,7 +26,13 @@ from evals.qa_runtime import (
     read_records,
 )
 from evals.retrieval_dataset import NegativeQuestion, PositiveQuestion
-from evals.run_qa import generate_answers, saved_fingerprints, validate_saved
+from evals.run_qa import (
+    QAConfig,
+    fingerprints,
+    generate_answers,
+    saved_fingerprints,
+    validate_saved,
+)
 from evals.tests.helpers import make_chunk, negative_payload, positive_payload
 
 
@@ -47,6 +53,27 @@ def test_cli_requires_explicit_freeze_before_starting_run(tmp_path: Path) -> Non
     )
     assert result.returncode == 2 and "--freeze" in result.stderr
     assert not output_dir.exists()
+
+
+def test_run_fingerprint_detects_prompt_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    prompt = Path("apps/mcp/src/docstral_mcp/qa/prompt.md")
+    prompt.parent.mkdir(parents=True)
+    prompt.write_text("Use the supplied evidence.\n")
+    for filename in ("uv.lock", "dataset.jsonl", "freeze.json"):
+        Path(filename).write_text("fixture\n")
+    config = QAConfig(
+        output_dir=tmp_path / "run",
+        freeze_path=Path("freeze.json"),
+        dataset=Path("dataset.jsonl"),
+    )
+    before = fingerprints(config)
+    prompt.write_text("Use only the supplied evidence.\n")
+    after = fingerprints(config)
+    assert before.keys() == after.keys()
+    assert {name for name in before if before[name] != after[name]} == {str(prompt)}
 
 
 class VespaBoundary:
@@ -139,8 +166,8 @@ async def test_generation_failure_retains_prefix_and_resume_queries_only_missing
 
 
 def answer(case: QACase, *, abstained: bool = False) -> CaseResult:
-    from docstral_backend import Citation
-    from docstral_backend.answering import _ABSTENTION_MESSAGE
+    from docstral_mcp.qa import Citation
+    from docstral_mcp.qa.models import _ABSTENTION_MESSAGE
 
     chunks = (
         make_chunk(

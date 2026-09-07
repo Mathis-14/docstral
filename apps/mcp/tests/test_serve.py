@@ -1,5 +1,12 @@
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 import docstral_mcp.serve as serve
 import pytest
+from docstral_mcp.config import ServerConfig
 from fastmcp import FastMCP
 from pydantic import AnyHttpUrl
 
@@ -12,7 +19,7 @@ def test_answer_model_setting(
     if model is not None:
         monkeypatch.setenv("DOCSTRAL_ANSWER_MODEL", model)
 
-    config = serve.ServerConfig(
+    config = ServerConfig(
         host="127.0.0.1",
         port=8000,
         top_k=5,
@@ -101,3 +108,44 @@ def test_command_runs_fastmcp_with_http_contract(
         "transport": "http",
         "uvicorn_config": {"access_log": True},
     }
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        pytest.param(None, "Cannot read the bundled Q&A prompt", id="missing"),
+        pytest.param(b"\xff", "Cannot read the bundled Q&A prompt", id="invalid-utf8"),
+        pytest.param(b" \n", "The bundled Q&A prompt is empty", id="empty"),
+    ],
+)
+def test_startup_rejects_broken_prompt_bundle(
+    tmp_path: Path, content: bytes | None, message: str
+) -> None:
+    package = tmp_path / "docstral_mcp"
+    shutil.copytree(
+        Path(__file__).parents[1] / "src/docstral_mcp",
+        package,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    prompt = package / "qa/prompt.md"
+    if content is None:
+        prompt.unlink()
+    else:
+        prompt.write_bytes(content)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            "from docstral_mcp.serve import main; main([])",
+        ],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(tmp_path), "MISTRAL_API_KEY": "test-key"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert message in result.stderr
+    assert "reinstall or rebuild docstral-mcp" in result.stderr

@@ -7,7 +7,7 @@ across questions, styles, and precise/natural pairs. No I/O or model calls.
 from collections import defaultdict
 from collections.abc import Sequence
 
-from docstral_backend import RetrievedChunk
+from docstral_mcp.qa import RetrievedChunk
 from pydantic import BaseModel, ConfigDict, Field
 
 from evals.retrieval_dataset import EvidenceGroup, PositiveQuestion, QuestionStyle

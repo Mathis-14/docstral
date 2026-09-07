@@ -16,7 +16,7 @@ from time import monotonic
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
-from docstral_backend import (
+from docstral_mcp.qa import (
     RetrievalRequest,
     RetrievalResponse,
     RetrievedChunk,

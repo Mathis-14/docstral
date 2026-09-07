@@ -1,6 +1,6 @@
 """Small, explicit inputs shared by the retrieval evaluation tests."""
 
-from docstral_backend import RetrievedChunk
+from docstral_mcp.qa import RetrievedChunk
 
 DOCS = "https://docs.mistral.ai"
 CONTENT_HASH = "a" * 64

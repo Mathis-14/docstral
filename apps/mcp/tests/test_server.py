@@ -1,6 +1,6 @@
 import httpx2
-from docstral_backend import AnswerResponse, Citation
-from docstral_mcp import create_server
+from docstral_mcp.qa import AnswerResponse, Citation
+from docstral_mcp.server import create_server
 from fastmcp import Client
 from mcp.types import TextContent
 
@@ -58,6 +58,7 @@ async def test_server_exposes_one_read_only_grounded_answer_tool() -> None:
             ),
         ),
     )
+    original_response = response.model_dump(mode="json")
     answerer = _FakeAnswerer(response)
 
     async with Client(create_server(answerer)) as client:
@@ -67,6 +68,7 @@ async def test_server_exposes_one_read_only_grounded_answer_tool() -> None:
             {"question": "How do I authenticate?"},
         )
 
+    assert response.model_dump(mode="json") == original_response
     assert [tool.name for tool in tools] == ["ask_docs"]
     tool = tools[0]
     assert tool.annotations is not None

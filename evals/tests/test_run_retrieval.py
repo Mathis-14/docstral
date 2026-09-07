@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import pytest
-from docstral_backend import RetrievalRequest, RetrievalResponse, RetrievedChunk
+from docstral_mcp.qa import RetrievalRequest, RetrievalResponse, RetrievedChunk
 
 from evals.run_retrieval import (
     EvaluationRunError,

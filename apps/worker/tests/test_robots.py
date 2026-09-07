@@ -1,8 +1,8 @@
 import httpx
 import pytest
-from docstral_worker.crawl import crawl
-from docstral_worker.fetch import FetchError, http_client
-from docstral_worker.robots import (
+from docstral_worker.crawler.crawl import crawl
+from docstral_worker.crawler.fetch import FetchError, http_client
+from docstral_worker.crawler.robots import (
     RobotsDeniedError,
     check_robots,
     load_robots,

@@ -2,9 +2,14 @@ import asyncio
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
-from docstral_worker.fetch import FetchError, FetchHttpStatusError, get, http_client
-from docstral_worker.robots import check_robots, load_robots, request_delay
-from docstral_worker.urls import DOCS_HOST, admit, canonicalize
+from docstral_worker.crawler.fetch import (
+    FetchError,
+    FetchHttpStatusError,
+    get,
+    http_client,
+)
+from docstral_worker.crawler.robots import check_robots, load_robots, request_delay
+from docstral_worker.crawler.urls import DOCS_HOST, admit, canonicalize
 
 SITEMAP_URL = f"https://{DOCS_HOST}/sitemap.xml"
 

@@ -1,10 +1,10 @@
 # Deployment
 
 Single-node GKE baseline: one zonal `e2-standard-4` (4 vCPU, 16 GB), not HA.
-The backend runs inside the MCP image; Mistral hosts the models and scheduling.
+Q&A runs inside the MCP image; Mistral hosts the models and scheduling.
 
 ```text
-Vibe --HTTPS/Google OAuth--> Gateway --> MCP + backend --> Vespa
+Vibe --HTTPS/Google OAuth--> Gateway --> MCP + Q&A --> Vespa
 Mistral Workflows <-------- worker ---------> Vespa
                            polling / incremental ingestion
 ```
@@ -94,7 +94,7 @@ build or re-ingestion is needed; deployments preserve this operator-owned settin
 Complete the one-time [public HTTPS setup](https.md) before deploying this release.
 Use `https://<MCP_PUBLIC_HOSTNAME>` as the OAuth origin; deployment rejects a
 mismatch before pausing schedules. Keep the signing key stable and at least 32
-characters long. See [MCP setup](../README.md#google-oauth-invited-users) for invitations.
+characters long. See [MCP setup](#google-oauth-invited-users) for invitations.
 
 ## Deploy and test
 
@@ -155,3 +155,53 @@ Rate limiting, backups and availability beyond one node remain separate work.
 Reference: [Vespa persistence](https://docs.vespa.ai/en/operations/self-managed/docker-containers.html),
 [GKE disks](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/gce-pd-csi-driver),
 [native Workflows workers](https://docs.mistral.ai/studio/workflows/getting-started/core_concepts/workers).
+
+## Google OAuth (invited users)
+
+Create a **Web application** OAuth client in
+[Google Auth Platform](https://console.cloud.google.com/auth/clients), with
+`http://localhost:8000/auth/callback` as the authorized redirect URI.
+
+Fill the OAuth settings from [.env.example](../.env.example) in `.env`.
+Only verified addresses in `DOCSTRAL_ALLOWED_EMAILS` can use the tool;
+Google's test-user list is not the access control for these identity-only scopes.
+
+```sh
+# Server terminal (stop any existing MCP first)
+uv run --env-file .env docstral-mcp --auth google
+# Another terminal
+vibe mcp add docstral-google --url http://localhost:8000/mcp --transport streamable-http
+```
+
+In Vibe, use `/mcp login docstral-google` if needed, then ask `ask_docs` a question
+and request all sources. Test outside the repository to avoid local-file context.
+
+Keep `FASTMCP_HOME` (`data/oauth`) and the secret signing key across restarts;
+Docker storage must be writable by UID 1000. This remains local, with one MCP
+instance. For remote access, see [GKE HTTPS setup](https.md).
+Invitations do not cap API spending. See [FastMCP OAuth](https://gofastmcp.com/integrations/google).
+
+## Docker images
+
+Build from the repository root (AMD64 is the GKE deployment target):
+
+```sh
+docker build --platform linux/amd64 \
+  -f deployment/docker/mcp.Dockerfile -t docstral-mcp:local .
+docker build --platform linux/amd64 \
+  -f deployment/docker/worker.Dockerfile -t docstral-worker:local .
+docker run --rm --platform linux/amd64 docstral-worker:local --help
+```
+
+With Docker Desktop and an indexed Vespa listening on the host's port 8080:
+
+```sh
+uv run --env-file .env docker run --rm --platform linux/amd64 \
+  --publish 127.0.0.1:8000:8000 --env MISTRAL_API_KEY \
+  docstral-mcp:local --vespa-endpoint http://host.docker.internal:8080
+```
+
+This serves `/mcp` without authentication. Images run as UID/GID 1000 and contain
+no corpus or secrets. Mount worker data at `/app/data`; run local ingestion on
+the host. See [native refresh](../apps/worker/README.md) and
+[deployment](#deploy-and-test). Cluster provisioning is separate.

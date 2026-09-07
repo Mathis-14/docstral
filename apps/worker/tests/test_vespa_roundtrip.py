@@ -3,7 +3,7 @@ from hashlib import sha256
 
 import pytest
 from docstral_vespa import search_index
-from docstral_worker.ingest import DocsChunkMetadata
+from docstral_worker.extract import DocsChunkMetadata
 from mistralai.search.toolkit.document import (
     Document,
     DocumentChunk,

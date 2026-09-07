@@ -14,7 +14,8 @@ from crawlee.storages import RequestQueue
 from pydantic import BaseModel, ConfigDict, Field
 
 from docstral_worker import IngestionError
-from docstral_worker.fetch import (
+from docstral_worker.config import MAX_PAGES
+from docstral_worker.crawler.fetch import (
     REDIRECT_STATUSES,
     TIMEOUT,
     FetchError,
@@ -24,15 +25,15 @@ from docstral_worker.fetch import (
     is_transient,
     request,
 )
-from docstral_worker.robots import check_robots, load_robots, request_delay
-from docstral_worker.urls import (
+from docstral_worker.crawler.robots import check_robots, load_robots, request_delay
+from docstral_worker.crawler.urls import (
     UrlCanonicalizationError,
     admit,
     canonicalize,
     is_docs_url,
 )
+from docstral_worker.models import DownloadedPage, PageResult
 
-MAX_PAGES = 2_000
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
 
@@ -236,4 +237,34 @@ async def crawl(
         counts=counts,
         complete=finished and not counts.failed,
         duration_seconds=monotonic() - started,
+    )
+
+
+async def download(url: str, *, delay: float) -> DownloadedPage | PageResult:
+    target = canonicalize(url, url)
+    selection = admit(target)
+    if not selection.admitted:
+        return PageResult(url=target.url, status="excluded", reason=selection.reason)
+    result = await crawl((target.url,), delay=delay, max_pages=1)
+    if not result.pages:
+        raise FetchError(target.url, "crawler returned no page result")
+    page = result.pages[0]
+    if page.status == "downloaded":
+        return DownloadedPage(url=page.url, html=page.body, links=page.links)
+    if page.status == "failed":
+        if page.reason and "robots_disallowed" in page.reason:
+            return PageResult(
+                url=page.url, status="excluded", reason="robots_disallowed"
+            )
+        raise FetchError(
+            page.url,
+            page.reason or "download failed",
+            status_code=page.status_code,
+            transient=page.transient,
+        )
+    return PageResult(
+        url=page.url,
+        status=page.status,
+        reason=page.reason,
+        redirect_url=page.redirect_url,
     )

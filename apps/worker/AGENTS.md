@@ -65,3 +65,12 @@
   an active local execution; never migrate while that execution is running.
 - Require a confirmed indexed page before starting MCP. Report partial results.
 - Do not introduce a separate normal local ingestion pipeline or pending marker.
+
+## Structure
+
+- `workflows/` owns orchestration; `crawler/` owns downloads and URL rules.
+- `extract.py`, `indexing.py` and `corpus.py` serve both native refresh and
+  snapshot tools without importing `workflows/`.
+- Group configuration in `config.py` and cross-task results in `models.py`.
+  URL, extraction and snapshot-specific models stay with their task.
+- Shared Vespa definitions live in `common/` as `docstral_vespa`.

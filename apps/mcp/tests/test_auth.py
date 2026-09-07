@@ -8,8 +8,8 @@ from urllib.parse import parse_qs, urlparse
 import fastmcp
 import httpx2
 import pytest
-from docstral_backend import AnswerResponse
-from docstral_mcp.auth import GoogleAuthConfig
+from docstral_mcp.config import GoogleAuthConfig
+from docstral_mcp.qa import AnswerResponse
 from docstral_mcp.serve import main
 from docstral_mcp.server import create_server
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -64,7 +64,7 @@ class _Answerer:
         ("DOCSTRAL_OAUTH_BASE_URL", "https://example.com?secret=value"),
     ],
 )
-def test_invalid_oauth_stops_before_backend_without_leaking_input(
+def test_invalid_oauth_stops_before_answering_without_leaking_input(
     oauth: GoogleAuthConfig,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

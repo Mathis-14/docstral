@@ -1,5 +1,5 @@
 import pytest
-from docstral_worker.urls import (
+from docstral_worker.crawler.urls import (
     RejectionReason,
     UrlCanonicalizationError,
     admit,

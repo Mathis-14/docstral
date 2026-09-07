@@ -1,39 +1,22 @@
-"""Run the Docstral MCP server over Streamable HTTP."""
-
 import argparse
 import logging
 from collections.abc import Sequence
 
-from docstral_backend import build_documentation_answerer
-from docstral_backend.answering import DEFAULT_ANSWER_MODEL
-from pydantic import AnyHttpUrl, Field, ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import ValidationError
 
-from docstral_mcp.auth import GoogleAuthConfig
+from docstral_mcp.config import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_TOP_K,
+    DEFAULT_VESPA_ENDPOINT,
+    GoogleAuthConfig,
+    ServerConfig,
+)
+from docstral_mcp.qa import build_documentation_answerer
 from docstral_mcp.server import create_server
-
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8000
-DEFAULT_TOP_K = 5
-DEFAULT_VESPA_ENDPOINT = "http://localhost:8080"
-
-
-class ServerConfig(BaseSettings):
-    """Validated MCP settings; explicit CLI values take precedence over environment."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="DOCSTRAL_", frozen=True, extra="forbid"
-    )
-
-    host: str = Field(min_length=1, pattern=r"\S")
-    port: int = Field(ge=1, le=65535)
-    top_k: int = Field(ge=1)
-    vespa_endpoint: AnyHttpUrl
-    answer_model: str = Field(default=DEFAULT_ANSWER_MODEL, min_length=1, pattern=r"\S")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the Docstral MCP server."""
     parser = _parser()
     args = parser.parse_args(argv)
     try:

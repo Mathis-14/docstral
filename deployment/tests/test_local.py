@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 from docstral_worker import IngestionError
-from docstral_worker.refresh.models import RefreshResult
+from docstral_worker.models import RefreshResult
 from local import LocalConfig, launch
 from mistralai.search.toolkit.document import compute_id
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import httpx2
 import pytest
-from docstral_worker.crawl import CrawlCounts, CrawlEntry, CrawlResult
+from docstral_worker.crawler.crawl import CrawlCounts, CrawlEntry, CrawlResult
 from docstral_worker.snapshot import CurrentSnapshot, current_snapshot, write_snapshot
 
 DOCS = "https://docs.mistral.ai"

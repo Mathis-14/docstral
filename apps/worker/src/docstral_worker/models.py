@@ -3,7 +3,7 @@ from typing import Literal, Self
 from mistralai.search.toolkit.document import compute_id
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from docstral_worker.urls import canonicalize, is_docs_url
+from docstral_worker.crawler.urls import canonicalize, is_docs_url
 
 
 class SourceIdentity(BaseModel):
@@ -71,3 +71,19 @@ class RefreshResult(BaseModel):
     deletions_skipped: bool
     duration_seconds: float = Field(ge=0)
     status: Literal["complete", "partial"]
+
+
+class IngestResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    indexed: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    duration_seconds: float = Field(ge=0.0)
+
+
+class ExtractResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    converted: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    duration_seconds: float = Field(ge=0.0)

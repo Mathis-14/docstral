@@ -6,11 +6,10 @@
 !apps/*/pyproject.toml
 !apps/*/src/
 !apps/*/src/**
-!packages/
-!packages/*/
-!packages/*/pyproject.toml
-!packages/*/src/
-!packages/*/src/**
+!common/
+!common/pyproject.toml
+!common/src/
+!common/src/**
 **/__pycache__/
 **/*.py[cod]
 **/.env*

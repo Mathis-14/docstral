@@ -8,7 +8,7 @@ from time import monotonic
 from typing import TYPE_CHECKING, Literal, Protocol, Self
 
 import httpx
-from docstral_backend import (
+from docstral_mcp.qa import (
     AnswerResponse,
     RetrievalRequest,
     RetrievalResponse,

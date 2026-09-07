@@ -16,32 +16,26 @@ from mistralai.search.toolkit.embedding import (
     MistralEmbedder,
 )
 from mistralai.search.toolkit.errors import SearchToolkitException
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
 from docstral_worker import IngestionError
-from docstral_worker.crawl import MAX_PAGES
-from docstral_worker.crawl_run import CrawlConfig, crawl_snapshot
-from docstral_worker.extract import ExtractionError, extract_snapshot
-from docstral_worker.ingest import IngestResult, ingest_snapshot
+from docstral_worker.config import (
+    DEFAULT_EXTRACTED,
+    DEFAULT_SNAPSHOTS,
+    DEFAULT_VESPA_ENDPOINT,
+    MAX_PAGES,
+    CrawlConfig,
+    ExtractConfig,
+    IngestConfig,
+)
+from docstral_worker.extract import ExtractionError
+from docstral_worker.models import IngestResult
 from docstral_worker.snapshot import current_snapshot
-
-DEFAULT_SNAPSHOTS = Path("data/snapshots")
-DEFAULT_EXTRACTED = Path("data/extracted")
-DEFAULT_VESPA_ENDPOINT = "http://localhost:8080"
-
-
-class ExtractConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    snapshots: Path = DEFAULT_SNAPSHOTS
-    out: Path = DEFAULT_EXTRACTED
-
-
-class IngestConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    snapshots: Path = DEFAULT_SNAPSHOTS
-    vespa_endpoint: str = DEFAULT_VESPA_ENDPOINT
+from docstral_worker.workflows.snapshots import (
+    crawl_snapshot,
+    extract_snapshot,
+    ingest_snapshot,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -52,7 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         os.environ.setdefault("LOG_FORMAT", "json")
         # SDK settings load on import; its default trace filter can expose errors.
         os.environ["OTEL_REDACTION"] = "strict"
-        from docstral_worker.refresh.worker import run_worker
+        from docstral_worker.worker import run_worker
 
         try:
             asyncio.run(run_worker())
@@ -133,8 +127,8 @@ def _run_ingest(config: IngestConfig) -> int:
             VespaClientConfig,
         )
 
-        from docstral_worker.refresh.corpus import VespaCorpus
-        from docstral_worker.refresh.indexing import PageIndexer
+        from docstral_worker.corpus import VespaCorpus
+        from docstral_worker.indexing import PageIndexer
 
         async def ingest() -> IngestResult:
             client = VespaClient(
