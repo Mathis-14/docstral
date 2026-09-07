@@ -65,10 +65,10 @@ HTML and XHTML both return links, including links from unchanged pages.
 MCP stays available while pages are updated; page replacement is not transactional.
 
 Only one refresh may run against a corpus, and none may start during deployment.
-Worker startup never creates or activates a schedule. Before deployment, manually
-pause scheduling and let old executions finish with the old worker.
-Verify a fresh refresh and an unchanged run before resuming hourly scheduling.
-See [deployment](../../deployment/README.md) for migration and rollout.
+Worker startup never creates or activates a schedule. See
+[hourly ingestion](../../deployment/README.md#hourly-ingestion) for setup,
+manual triggers and pause/resume, and [deployment](../../deployment/README.md#deploy-and-test)
+for migration and rollout.
 
 ## Local startup
 
@@ -119,22 +119,22 @@ uv run --locked --all-packages --env-file .env docstral-mcp \
 
 ## Production routing
 
-Set `DEPLOYMENT_NAME=docstral-production` in the cluster's operator-owned
-`runtime` ConfigMap. The worker manifest sets native location `k8s` and obtains
+Use the `DEPLOYMENT_NAME` configured in the cluster's operator-owned `runtime`
+ConfigMap for production runs and schedules. No particular name is required.
+The worker manifest sets native location `k8s` and obtains
 the namespace through the Downward API; no service-account token is mounted.
 The location describes the host environment. `DEPLOYMENT_NAME` is the routing
 boundary, so production and local workers may register the same `docstral-refresh`
 workflow without competing for executions.
 
-In Studio, select the `docstral-production` deployment for production runs and
-schedules. API callers must pass `deployment_name="docstral-production"` explicitly,
-with input `{}`. Omitting the deployment can cause an ambiguous-workflow error
+In Studio, select this deployment for production runs and schedules.
+API callers must pass the same value as `deployment_name`, with input `{}`.
+Omitting the deployment can cause an ambiguous-workflow error
 when local and production workers are both active. Worker startup does not create
 or enable schedules. See [Mistral deployment routing](https://docs.mistral.ai/studio/workflows/managing-workflows-in-production/deployments).
 
-Verify the deployment name and location through Studio or
-`client.workflows.deployments.get_deployment(name="docstral-production")` after
-rollout; the production worker should report location `k8s` and namespace
+Verify the deployment name and location in Studio after rollout;
+the production worker should report location `k8s` and namespace
 `docstral`, while a local launcher reports its `docstral-local-…` name and `local`.
 A deployment rename requires the [operator transition](../../deployment/README.md#changing-the-production-workflows-deployment).
 
