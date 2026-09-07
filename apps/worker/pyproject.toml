@@ -9,6 +9,7 @@ description = "Documentation worker for Docstral"
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "beautifulsoup4",
+    "crawlee[beautifulsoup,httpx]==1.10.0",
     "docstral-vespa",
     "httpx",
     "mistralai-search-toolkit[html-converter-markdownify]==0.0.13",

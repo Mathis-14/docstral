@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
 from collections.abc import Sequence
 from math import isfinite
@@ -9,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import structlog
+from mistralai.search.toolkit.clients.mistral import build_mistral_client
 from mistralai.search.toolkit.embedding import (
     MODEL_1024_EMBEDDING,
     MistralEmbedder,
@@ -20,7 +22,7 @@ from docstral_worker import IngestionError
 from docstral_worker.crawl import MAX_PAGES
 from docstral_worker.crawl_run import CrawlConfig, crawl_snapshot
 from docstral_worker.extract import ExtractionError, extract_snapshot
-from docstral_worker.ingest import build_pipeline, ingest_snapshot
+from docstral_worker.ingest import IngestResult, ingest_snapshot
 from docstral_worker.snapshot import current_snapshot
 
 DEFAULT_SNAPSHOTS = Path("data/snapshots")
@@ -81,7 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _run_crawl(config: CrawlConfig) -> int:
     logger = structlog.get_logger(__name__)
     try:
-        result = crawl_snapshot(config)
+        result = asyncio.run(crawl_snapshot(config))
     except IngestionError as exc:
         logger.error(
             "crawl_failed",
@@ -126,19 +128,38 @@ def _run_ingest(config: IngestConfig) -> int:
         snapshot = current_snapshot(config.snapshots)
         if snapshot is None:
             raise IngestionError(f"No current snapshot under {str(config.snapshots)!r}")
-        try:
-            embedder = MistralEmbedder(
-                model_name=MODEL_1024_EMBEDDING,
-                max_retry=6,
-            )
-        except RuntimeError as exc:
-            raise IngestionError(str(exc)) from exc
-        from docstral_vespa import search_index
-
-        pipeline = build_pipeline(
-            index=search_index(config.vespa_endpoint), embedder=embedder
+        from mistralai.search.toolkit.plugins.vespa import (
+            VespaClient,
+            VespaClientConfig,
         )
-        result = asyncio.run(ingest_snapshot(snapshot, pipeline))
+
+        from docstral_worker.refresh.corpus import VespaCorpus
+        from docstral_worker.refresh.indexing import PageIndexer
+
+        async def ingest() -> IngestResult:
+            client = VespaClient(
+                VespaClientConfig(endpoint=config.vespa_endpoint, timeout=30)
+            )
+            try:
+                with build_mistral_client() as mistral:
+                    async with mistral:
+                        return await ingest_snapshot(
+                            snapshot,
+                            PageIndexer(
+                                VespaCorpus(client),
+                                MistralEmbedder(
+                                    client=mistral,
+                                    model_name=MODEL_1024_EMBEDDING,
+                                    max_retry=3,
+                                ),
+                            ),
+                        )
+            except RuntimeError as error:
+                raise IngestionError(str(error)) from error
+            finally:
+                await client.aclose()
+
+        result = asyncio.run(ingest())
     except (IngestionError, SearchToolkitException) as exc:
         logger.error(
             "ingest_failed",
@@ -233,6 +254,8 @@ def _http_endpoint(value: str) -> str:
 
 
 def _configure_logging() -> None:
+    logging.getLogger("HttpCrawler").setLevel(logging.CRITICAL)
+    logging.getLogger("crawlee").setLevel(logging.WARNING)
     structlog.reset_defaults()
     structlog.configure(
         processors=[

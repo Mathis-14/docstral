@@ -348,3 +348,20 @@ plus the two latest complete snapshots and latest failed snapshot.
   local snapshot commands and the Markdown-only citation hash remain unchanged.
   Accepted costs: more workflow events, fresh HTTP reads each run, repeated
   page work on retries, progressive updates and no frozen HTML replay.
+
+
+- D027 — Use Crawlee 1.10.0 for downloads, HTML link parsing and standalone
+  capture queues. Keep a short strict Docstral sitemap parser, canonicalization,
+  admission and response classification. Native activities own their three
+  transient attempts; standalone capture uses up to three Crawlee attempts.
+  Retain robots permissions and Crawl-delay, remove Request-rate, ETag caching,
+  custom HTTP backoff and Retry-After thresholds. Replace detailed crawl audits
+  with counts and errors. Standalone snapshots use a minimal v2 manifest and
+  one HTML hash check per read; only complete captures replace current, and
+  incomplete captures are not archived. Reject old formats without migrating
+  or deleting old captures. This supersedes the detailed audit and snapshot
+  prescriptions in D001, D006 and D007, and D004's Request-rate policy.
+  Normal local startup uses the same native workflow as production through an
+  explicitly isolated local deployment; reuse confirmed corpus data and active
+  executions, with make refresh for explicit updates. Offline snapshot ingestion
+  shares the page indexer. No automatic scheduling or pending marker is added.

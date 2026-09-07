@@ -1,101 +1,90 @@
-from hashlib import sha256
-from pathlib import Path
-
+import httpx
 import pytest
-from docstral_worker.fetch import FetchResult
-from docstral_worker.sitemap import (
-    SitemapFetchError,
-    SitemapIndexError,
-    SitemapParseError,
-    fetch_sitemap,
-    parse_sitemap,
-)
-
-SITEMAP_URL = "https://docs.mistral.ai/sitemap.xml"
+from docstral_worker.fetch import FetchError
+from docstral_worker.sitemap import SitemapParseError, fetch_sitemap, parse_sitemap
+from worker_fixtures import DOCS, Services
+from worker_fixtures import services as services
 
 
-class StubFetcher:
-    def __init__(
-        self,
-        body: bytes,
-        status_code: int = 200,
-        final_url: str = SITEMAP_URL,
-    ) -> None:
-        self.body = body
-        self.status_code = status_code
-        self.final_url = final_url
-        self.request: tuple[str, str | None] | None = None
-
-    def fetch(self, url: str, etag: str | None) -> FetchResult:
-        self.request = (url, etag)
-        return FetchResult(
-            requested_url=url,
-            final_url=self.final_url,
-            status_code=self.status_code,
-            etag=None,
-            content_type="application/xml",
-            body=self.body,
-        )
-
-
-def test_fetch_sitemap_filters_language_and_hashes_bytes() -> None:
-    fixture = Path(__file__).parent / "fixtures" / "sitemap.xml"
-    payload = fixture.read_bytes()
-    fetcher = StubFetcher(payload)
-
-    result = fetch_sitemap(fetcher)
-
-    assert fetcher.request == (SITEMAP_URL, None)
-    assert len(result.english_urls) == 10
-    assert len(result.french_urls) == 10
-    assert result.english_urls[0] == "https://docs.mistral.ai/"
-    assert result.french_urls[0] == "https://docs.mistral.ai/fr"
-    assert result.total_count == 20
-    assert result.sha256 == sha256(payload).hexdigest()
-
-
-def test_fetch_sitemap_names_unfetched_external_redirect() -> None:
-    fetcher = StubFetcher(
-        b"", status_code=302, final_url="https://example.com/sitemap.xml"
+def test_sitemap_filters_and_deduplicates_documentation_urls() -> None:
+    paths = ["/a", "/en/a/", "/b", "/fr/a", "/api", "/asset.png"]
+    xml = (
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(f"<url><loc>{DOCS}{path}</loc></url>" for path in paths)
+        + "</urlset>"
     )
-
-    with pytest.raises(SitemapFetchError, match="external redirect was not fetched"):
-        fetch_sitemap(fetcher)
-
-
-def test_fetch_sitemap_names_unexpected_304() -> None:
-    fetcher = StubFetcher(b"", status_code=304)
-
-    with pytest.raises(SitemapFetchError, match="unexpected HTTP 304"):
-        fetch_sitemap(fetcher)
-
-
-def test_sitemap_error_hides_source_query() -> None:
-    source_url = f"{SITEMAP_URL}?token=secret"
-
-    with pytest.raises(SitemapParseError) as caught:
-        parse_sitemap(b"<urlset>", source_url)
-
-    assert caught.value.url == SITEMAP_URL
-    assert "secret" not in str(caught.value)
-
-
-def test_sitemap_index_fails_explicitly() -> None:
-    payload = b'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" />'
-
-    with pytest.raises(SitemapIndexError, match="not supported"):
-        parse_sitemap(payload, SITEMAP_URL)
+    assert parse_sitemap(xml.encode()) == (DOCS + "/a", DOCS + "/b")
 
 
 @pytest.mark.parametrize(
-    "payload",
+    "xml",
     [
-        b"<urlset>",
-        b"<urlset><url /></urlset>",
+        b"broken",
+        b"<sitemapindex/>",
+        b"<urlset/>",
+        b"<urlset><url/></urlset>",
         b"<urlset><url><loc>/relative</loc></url></urlset>",
-        b"<feed />",
+        b"<urlset><url><loc> </loc></url></urlset>",
     ],
 )
-def test_invalid_sitemap_fails_with_context(payload: bytes) -> None:
-    with pytest.raises(SitemapParseError, match="Sitemap"):
-        parse_sitemap(payload, SITEMAP_URL)
+def test_incomplete_sitemap_fails_explicitly(xml: bytes) -> None:
+    with pytest.raises(SitemapParseError):
+        parse_sitemap(xml)
+
+
+async def test_sitemap_uses_shared_http_client(services: Services) -> None:
+    services.seeds = ["/a", "/b"]
+    assert await fetch_sitemap(delay=0) == (DOCS + "/a", DOCS + "/b")
+
+
+async def test_failed_sitemap_never_becomes_empty_discovery(services: Services) -> None:
+    services.responses["/sitemap.xml"] = httpx.Response(503)
+    with pytest.raises(FetchError, match="HTTP 503"):
+        await fetch_sitemap(delay=0)
+
+
+async def test_redirected_sitemap_discovers_pages(services: Services) -> None:
+    services.responses["/sitemap.xml"] = httpx.Response(
+        301, headers={"location": "/redirected/sitemap.xml"}
+    )
+    services.responses["/redirected/sitemap.xml"] = httpx.Response(
+        200, text=f"<urlset><url><loc>{DOCS}/a</loc></url></urlset>"
+    )
+    assert await fetch_sitemap(delay=0) == (DOCS + "/a",)
+    assert [request.url.path for request in services.requests] == [
+        "/robots.txt",
+        "/sitemap.xml",
+        "/redirected/sitemap.xml",
+    ]
+
+
+async def test_sitemap_redirect_cannot_bypass_robots(services: Services) -> None:
+    services.responses["/robots.txt"] = httpx.Response(
+        200, text="User-agent: *\nDisallow: /private\n"
+    )
+    services.responses["/sitemap.xml"] = httpx.Response(
+        301, headers={"location": "/private/sitemap.xml"}
+    )
+    with pytest.raises(FetchError, match="robots_disallowed"):
+        await fetch_sitemap(delay=0)
+    assert [request.url.path for request in services.requests] == [
+        "/robots.txt",
+        "/sitemap.xml",
+    ]
+
+
+@pytest.mark.parametrize(
+    "location", ["https://example.com/sitemap.xml", "/sitemap.xml", None]
+)
+async def test_invalid_sitemap_redirect_fails_before_destination_fetch(
+    services: Services, location: str | None
+) -> None:
+    services.responses["/sitemap.xml"] = httpx.Response(
+        301, headers={"location": location} if location else {}
+    )
+    with pytest.raises(FetchError):
+        await fetch_sitemap(delay=0)
+    assert [request.url.path for request in services.requests] == [
+        "/robots.txt",
+        "/sitemap.xml",
+    ]

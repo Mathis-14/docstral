@@ -1,32 +1,24 @@
-from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
 import pytest
 from docstral_worker.cli import main
-from docstral_worker.crawl import (
-    CrawlCounts,
-    CrawlEntry,
-    CrawlResult,
-    DiscoveryVia,
-    PageDecision,
-)
 from docstral_worker.extract import (
     DocsHtmlConverter,
     ExtractionError,
     extract_page,
     outline,
 )
-from docstral_worker.sitemap import SitemapSnapshot
-from docstral_worker.snapshot import write_snapshot
+from docstral_worker.snapshot import page_slug
 from mistralai.search.toolkit.ingestion import File
 from mistralai.search.toolkit.ingestion.extractors import (
     HTMLExtractor,
     HtmlToMarkdownConverter,
 )
+from worker_fixtures import html, snapshot
 
 DOCS = "https://docs.mistral.ai"
-CRAWLED_AT = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+
 
 # One page carrying every docs.mistral.ai markup pattern the converter handles:
 # a nested article, a light/dark code block pair under language and non-language
@@ -130,7 +122,9 @@ async def test_converter_satisfies_the_toolkit_contract() -> None:
 
     assert isinstance(converter, HtmlToMarkdownConverter)
     document = await HTMLExtractor(converter=converter).extract(
-        File(path=url, name="guide.html", raw=PAGE, source_id=url)
+        File(
+            path=url, name=f"{page_slug(DOCS + '/guide')}.html", raw=PAGE, source_id=url
+        )
     )
     assert document.content == EXPECTED
     assert document.content == extract_page(url, PAGE).markdown
@@ -159,15 +153,17 @@ def test_extract_page_rejects_an_empty_article() -> None:
 def test_extract_command_writes_markdown(tmp_path: Path) -> None:
     snapshots = tmp_path / "snapshots"
     extracted = tmp_path / "extracted"
-    _write_snapshot(snapshots, ("/guide", _html("Guide", "Body")))
+    snapshot(snapshots, ("/guide", html("Guide", "Body")))
 
     exit_code = main(
         ["extract", "--snapshots", str(snapshots), "--out", str(extracted)]
     )
 
-    destination = extracted / "20260903T120000Z"
+    destination = extracted / "20260903T120000000000Z"
     assert exit_code == 0
-    assert (destination / "pages" / "guide.md").read_text() == "# Guide\n\nBody"
+    assert (
+        destination / "pages" / f"{page_slug(DOCS + '/guide')}.md"
+    ).read_text() == "# Guide\n\nBody"
 
 
 def test_extract_command_fails_without_a_current_snapshot(
@@ -194,9 +190,9 @@ def test_extract_command_records_invalid_utf8_and_continues(
 ) -> None:
     snapshots = tmp_path / "snapshots"
     extracted = tmp_path / "extracted"
-    _write_snapshot(
+    snapshot(
         snapshots,
-        ("/good", _html("Good", "Kept")),
+        ("/good", html("Good", "Kept")),
         ("/invalid", b"\xff"),
     )
 
@@ -204,10 +200,12 @@ def test_extract_command_records_invalid_utf8_and_continues(
         ["extract", "--snapshots", str(snapshots), "--out", str(extracted)]
     )
 
-    destination = extracted / "20260903T120000Z"
+    destination = extracted / "20260903T120000000000Z"
     assert exit_code == 1
-    assert (destination / "pages" / "good.md").read_text() == "# Good\n\nKept"
-    assert not (destination / "pages" / "invalid.md").exists()
+    assert (
+        destination / "pages" / f"{page_slug(DOCS + '/good')}.md"
+    ).read_text() == "# Good\n\nKept"
+    assert not (destination / "pages" / f"{page_slug(DOCS + '/invalid')}.md").exists()
     captured = capsys.readouterr()
     output = captured.out + captured.err
     assert "Invalid UTF-8 HTML" in output
@@ -217,8 +215,8 @@ def test_extract_command_records_invalid_utf8_and_continues(
 def test_extract_command_refuses_to_overwrite_output(tmp_path: Path) -> None:
     snapshots = tmp_path / "snapshots"
     extracted = tmp_path / "extracted"
-    _write_snapshot(snapshots, ("/guide", _html("Guide", "Body")))
-    destination = extracted / "20260903T120000Z"
+    snapshot(snapshots, ("/guide", html("Guide", "Body")))
+    destination = extracted / "20260903T120000000000Z"
     destination.mkdir(parents=True)
     marker = destination / "keep"
     marker.write_text("unchanged")
@@ -237,80 +235,39 @@ def test_extract_records_a_corrupted_raw_page_and_continues(
 ) -> None:
     snapshots = tmp_path / "snapshots"
     extracted = tmp_path / "extracted"
-    _write_snapshot(
+    snapshot(
         snapshots,
-        ("/corrupt", _html("Corrupt", "Original")),
-        ("/good", _html("Good", "Kept")),
-        ("/missing", _html("Missing", "Gone")),
+        ("/corrupt", html("Corrupt", "Original")),
+        ("/good", html("Good", "Kept")),
+        ("/missing", html("Missing", "Gone")),
     )
-    raw = snapshots / "20260903T120000Z" / "raw" / "corrupt.html"
-    raw.write_bytes(_html("Corrupt", "Changed"))
-    missing = snapshots / "20260903T120000Z" / "raw" / "missing.html"
+    raw = (
+        snapshots
+        / "20260903T120000000000Z"
+        / "raw"
+        / f"{page_slug(DOCS + '/corrupt')}.html"
+    )
+    raw.write_bytes(html("Corrupt", "Changed"))
+    missing = (
+        snapshots
+        / "20260903T120000000000Z"
+        / "raw"
+        / f"{page_slug(DOCS + '/missing')}.html"
+    )
     missing.unlink()
 
     exit_code = main(
         ["extract", "--snapshots", str(snapshots), "--out", str(extracted)]
     )
 
-    destination = extracted / "20260903T120000Z"
+    destination = extracted / "20260903T120000000000Z"
     assert exit_code == 1
-    assert not (destination / "pages" / "corrupt.md").exists()
-    assert (destination / "pages" / "good.md").read_text() == "# Good\n\nKept"
-    assert not (destination / "pages" / "missing.md").exists()
+    assert not (destination / "pages" / f"{page_slug(DOCS + '/corrupt')}.md").exists()
+    assert (
+        destination / "pages" / f"{page_slug(DOCS + '/good')}.md"
+    ).read_text() == "# Good\n\nKept"
+    assert not (destination / "pages" / f"{page_slug(DOCS + '/missing')}.md").exists()
     captured = capsys.readouterr()
     output = captured.out + captured.err
-    assert "SHA-256" in output
+    assert "HTML hash mismatch" in output
     assert "SnapshotReadError" in output
-
-
-def _html(title: str, body: str) -> bytes:
-    return (
-        f"<html><head><title>{title} | Mistral Docs</title></head>"
-        f'<body><main><article class="prose"><h1>{title}</h1>'
-        f"<p>{body}</p></article></main></body></html>"
-    ).encode()
-
-
-def _write_snapshot(root: Path, *pages: tuple[str, bytes]) -> None:
-    entries = tuple(_stored(path, body) for path, body in pages)
-    result = CrawlResult(
-        pages=entries,
-        counts=CrawlCounts(
-            sitemap_english=len(entries),
-            sitemap_french=0,
-            discovered_by_link=0,
-            admitted=len(entries),
-            stored=len(entries),
-            rejected=0,
-            failed=0,
-            status_200=len(entries),
-            status_304=0,
-            redirects=0,
-            external_links=0,
-            malformed_links=0,
-            rejections={},
-        ),
-        complete=True,
-        duration_seconds=0.1,
-    )
-    sitemap = SitemapSnapshot(
-        url=f"{DOCS}/sitemap.xml",
-        sha256="a" * 64,
-        english_urls=tuple(entry.canonical_url for entry in entries),
-        french_urls=(),
-    )
-    write_snapshot(root, CRAWLED_AT, sitemap, result)
-
-
-def _stored(path: str, body: bytes) -> CrawlEntry:
-    url = f"{DOCS}{path}"
-    return CrawlEntry(
-        canonical_url=url,
-        requested_url=url,
-        final_url=url,
-        discovered_via=DiscoveryVia.SITEMAP,
-        decision=PageDecision.STORED,
-        status_code=200,
-        raw_sha256=sha256(body).hexdigest(),
-        body=body,
-    )

@@ -13,6 +13,7 @@ from mistralai.search.toolkit.embedding import MODEL_1024_EMBEDDING, MistralEmbe
 from mistralai.search.toolkit.plugins.vespa import VespaClient, VespaClientConfig
 from mistralai.workflows.exceptions import WorkflowError
 
+from docstral_worker.fetch import is_transient
 from docstral_worker.refresh.config import refresh_config
 from docstral_worker.refresh.corpus import VespaCorpus
 from docstral_worker.refresh.crawler import discover, download
@@ -21,6 +22,8 @@ from docstral_worker.refresh.models import DiscoveryResult, PageResult
 
 
 def retryable(error: BaseException) -> bool:
+    if is_transient(error):
+        return True
     if isinstance(error, BaseExceptionGroup):
         return all(retryable(cause) for cause in error.exceptions)
     if isinstance(
@@ -93,7 +96,7 @@ async def corpus_client() -> AsyncIterator[VespaCorpus]:
 )
 async def discover_urls() -> DiscoveryResult:
     async with activity_scope("discover_urls"):
-        return await asyncio.to_thread(discover, refresh_config())
+        return await discover(refresh_config())
 
 
 @workflows.activity(
@@ -105,7 +108,7 @@ async def discover_urls() -> DiscoveryResult:
 )
 async def sync_page(url: str) -> PageResult:
     async with activity_scope("sync_page", url):
-        page = await asyncio.to_thread(download, url, refresh_config())
+        page = await download(url, refresh_config())
         if isinstance(page, PageResult):
             return page
         async with AsyncExitStack() as resources:

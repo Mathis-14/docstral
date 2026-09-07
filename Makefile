@@ -1,4 +1,4 @@
-.PHONY: vespa-up vespa-reset migrate crawl extract ingest mcp check
+.PHONY: local refresh vibe vespa-up vespa-reset migrate crawl extract ingest mcp check
 
 VESPA_CONTAINER ?= docstral-vespa
 VESPA_QUERY_PORT ?= 8080
@@ -32,8 +32,19 @@ ingest:
 mcp:
 	uv run --env-file .env docstral-mcp --vespa-endpoint $(VESPA_ENDPOINT)
 
+vibe:
+	@test -f .env || cp .env.example .env
+	uv run --env-file .env sh -c 'exec vibe mcp add docstral \
+		--url "http://127.0.0.1:$${DOCSTRAL_MCP_PORT:-8000}/mcp" \
+		--transport streamable-http --header X-Docstral-Client=vibe'
+
 check:
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run mypy
 	uv run pytest
+
+local refresh:
+	@test -f .env || cp .env.example .env
+	uv sync --locked --all-packages
+	VESPA_CONTAINER=$(VESPA_CONTAINER) VESPA_QUERY_PORT=$(VESPA_QUERY_PORT) VESPA_CONFIG_PORT=$(VESPA_CONFIG_PORT) uv run --locked --all-packages --env-file .env python deployment/local.py $(if $(filter refresh,$@),--refresh,)
