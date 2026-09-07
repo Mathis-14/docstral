@@ -45,10 +45,23 @@
 
 ## Standalone local tools
 
-- Keep local `crawl` sequential, using `Fetcher`, URL admission and robots rules.
+- Keep standalone `crawl` sequential with Crawlee and the same URL, robots and
+  download rules as native page activities. Disable Crawlee retries inside
+  activities; standalone capture allows at most three attempts per page.
 - Snapshots live under `data/snapshots/<UTC timestamp>/`; only complete runs
-  update `current`. `extract` reads snapshots offline and refuses overwrite.
+  update `current`. Incomplete captures are not archived. Use the minimal v2
+  manifest and verify the HTML hash once at read; refuse legacy formats clearly.
+  `extract` reads snapshots offline and refuses overwrite.
 - `make ingest` rebuilds local Vespa before ingesting the current snapshot.
   These commands are separate from the native refresh workflow.
 - Keep the full-page Toolkit splitter at 800 / 800 / 0, embeddings at 1024
   dimensions and citations at canonical-page granularity.
+
+## Normal local execution
+
+- `make local` initializes and reuses local Vespa through the native
+  `docstral-refresh` workflow; `make refresh` requests an explicit update.
+- Keep local deployment routing explicit and distinct from production. Reuse
+  an active local execution; never migrate while that execution is running.
+- Require a confirmed indexed page before starting MCP. Report partial results.
+- Do not introduce a separate normal local ingestion pipeline or pending marker.

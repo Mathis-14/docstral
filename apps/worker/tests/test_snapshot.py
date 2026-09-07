@@ -1,244 +1,103 @@
 import json
-from datetime import UTC, datetime, timedelta
-from hashlib import sha256
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from docstral_worker.crawl import (
-    CrawlCounts,
-    CrawlEntry,
-    CrawlResult,
-    DiscoveryVia,
-    PageDecision,
-)
-from docstral_worker.sitemap import SitemapSnapshot
-from docstral_worker.snapshot import (
-    SnapshotCollisionError,
-    SnapshotManifest,
-    SnapshotReadError,
-    current_snapshot,
-    page_slug,
-    write_snapshot,
-)
-from docstral_worker.urls import RejectionReason
-
-DOCS = "https://docs.mistral.ai"
-CRAWLED_AT = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
+from docstral_worker.crawl import CrawlCounts, CrawlEntry, CrawlResult
+from docstral_worker.snapshot import SnapshotReadError, current_snapshot, write_snapshot
+from worker_fixtures import DOCS, snapshot
 
 
-def stored(path: str, body: bytes) -> CrawlEntry:
-    url = f"{DOCS}{path}"
-    return CrawlEntry(
-        canonical_url=url,
-        requested_url=url,
-        final_url=url,
-        discovered_via=DiscoveryVia.SITEMAP,
-        decision=PageDecision.STORED,
-        status_code=200,
-        etag='"v1"',
-        raw_sha256=sha256(body).hexdigest(),
-        body=body,
-    )
-
-
-def failed(path: str) -> CrawlEntry:
-    url = f"{DOCS}{path}"
-    return CrawlEntry(
-        canonical_url=url,
-        requested_url=url,
-        discovered_via=DiscoveryVia.LINK,
-        decision=PageDecision.FAILED,
-        error_type="FetchError",
-        error_message=f"Fetch {url!r}: network exhausted",
-    )
-
-
-def result(*pages: CrawlEntry, complete: bool = True) -> CrawlResult:
-    stored_count = sum(page.decision is PageDecision.STORED for page in pages)
-    rejected_count = sum(page.decision is PageDecision.REJECTED for page in pages)
-    failed_count = sum(page.decision is PageDecision.FAILED for page in pages)
-    rejections = {
-        reason: sum(page.reason is reason for page in pages)
-        for reason in RejectionReason
-        if any(page.reason is reason for page in pages)
-    }
-    return CrawlResult(
-        pages=tuple(sorted(pages, key=lambda page: page.canonical_url)),
-        counts=CrawlCounts(
-            sitemap_english=len(pages),
-            sitemap_french=0,
-            discovered_by_link=failed_count,
-            admitted=len(pages),
-            stored=stored_count,
-            rejected=rejected_count,
-            failed=failed_count,
-            status_200=stored_count,
-            status_304=0,
-            redirects=0,
-            external_links=0,
-            malformed_links=0,
-            rejections=rejections,
-        ),
-        complete=complete,
-        duration_seconds=1.25,
-    )
-
-
-def sitemap() -> SitemapSnapshot:
-    return SitemapSnapshot(
-        url=f"{DOCS}/sitemap.xml",
-        sha256="a" * 64,
-        english_urls=(f"{DOCS}/",),
-        french_urls=(),
-    )
-
-
-def test_writes_complete_autonomous_snapshot_and_loads_cache(tmp_path: Path) -> None:
-    root = stored("/", b"<main>Root</main>")
-    guide = stored("/guide/start", b"<main>Guide</main>")
-
-    destination = write_snapshot(tmp_path, CRAWLED_AT, sitemap(), result(guide, root))
-
-    assert destination.name == "20260903T120000Z"
-    assert (tmp_path / "current").read_text() == f"{destination.name}\n"
-    assert (destination / "raw" / "index.html").read_bytes() == root.body
-    assert (destination / "raw" / "guide__start.html").read_bytes() == guide.body
-    payload = json.loads((destination / "manifest.json").read_text())
-    assert list(payload) == [
-        "crawled_at",
-        "sitemap_url",
-        "sitemap_sha256",
-        "counts",
-        "pages",
+def test_complete_snapshot_can_be_read_without_network(tmp_path: Path) -> None:
+    saved = snapshot(tmp_path, ("/a", b"<html>A</html>"))
+    assert saved.manifest.version == 2
+    assert saved.get(DOCS + "/a") == b"<html>A</html>"
+    assert sorted(path.name for path in saved.directory.iterdir()) == [
+        "manifest.json",
+        "raw",
     ]
-    assert [page["canonical_url"] for page in payload["pages"]] == [
-        f"{DOCS}/",
-        f"{DOCS}/guide/start",
-    ]
-    assert "body" not in payload["pages"][0]
-    assert SnapshotManifest.model_validate(payload).counts.stored == 2
+
+
+def test_absent_current_does_not_create_files(tmp_path: Path) -> None:
+    assert current_snapshot(tmp_path / "absent") is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_failed_capture_preserves_current_without_archiving_failure(
+    tmp_path: Path,
+) -> None:
+    previous = snapshot(tmp_path, ("/a", b"A"))
+    before = set(tmp_path.iterdir())
+    result = CrawlResult(
+        pages=(CrawlEntry(url=DOCS + "/b", status="failed", reason="HTTP 503"),),
+        counts=CrawlCounts(failed=1),
+        complete=False,
+        duration_seconds=0,
+    )
+    assert write_snapshot(tmp_path, datetime.now(UTC), result) is None
+    assert set(tmp_path.iterdir()) == before
     current = current_snapshot(tmp_path)
     assert current is not None
-    assert current.directory == destination
-    assert current.manifest.counts.stored == 2
-    assert page_slug(f"{DOCS}/guide/start") == "guide__start"
-    report = (destination / "report.md").read_text()
-    assert "- Status: complete" in report
-    assert "- Pages stored: 2" in report
-    assert "- External links: 0" in report
-    assert "- Malformed links: 0" in report
-
-    cached = current.get(f"{DOCS}/guide/start")
-    assert cached is not None
-    assert cached.body == guide.body
-    assert cached.raw_sha256 == guide.raw_sha256
-    assert not list(tmp_path.glob(".snapshot-*"))
-    assert not list(tmp_path.glob(".current-*"))
+    assert current.directory == previous.directory
 
 
-def test_missing_current_does_not_create_output_directory(tmp_path: Path) -> None:
-    out = tmp_path / "snapshots"
-
-    assert current_snapshot(out) is None
-    assert not out.exists()
-
-
-@pytest.mark.parametrize("kind", ["corrupt", "missing", "symlink", "directory"])
-def test_snapshot_get_rejects_invalid_raw_files(tmp_path: Path, kind: str) -> None:
-    directory = write_snapshot(
-        tmp_path, CRAWLED_AT, sitemap(), result(stored("/guide", b"Guide"))
-    )
-    snapshot = current_snapshot(tmp_path)
-    assert snapshot is not None
-    raw = directory / "raw" / "guide.html"
-    if kind == "corrupt":
-        raw.write_bytes(b"Tampered")
-    else:
-        raw.unlink()
-        if kind == "symlink":
-            target = tmp_path / "target.html"
-            target.write_bytes(b"Guide")
-            raw.symlink_to(target)
-        elif kind == "directory":
-            raw.mkdir()
-
+@pytest.mark.parametrize("damage", ["corrupt", "missing", "directory", "symlink"])
+def test_unusable_html_fails_when_the_page_is_read(tmp_path: Path, damage: str) -> None:
+    saved = snapshot(tmp_path, ("/a", b"Original"))
+    page = saved.directory / saved.manifest.pages[0].path
+    page.unlink()
+    if damage == "corrupt":
+        page.write_bytes(b"Changed")
+    elif damage == "directory":
+        page.mkdir()
+    elif damage == "symlink":
+        outside = tmp_path / "outside"
+        outside.write_bytes(b"Original")
+        page.symlink_to(outside)
     with pytest.raises(SnapshotReadError):
-        snapshot.get(f"{DOCS}/guide")
+        saved.get(DOCS + "/a")
 
 
-@pytest.mark.parametrize(
-    "component", ["root", "current", "snapshot", "manifest", "raw"]
-)
-def test_snapshot_rejects_symlink_components(tmp_path: Path, component: str) -> None:
-    root = tmp_path / "snapshots"
-    directory = write_snapshot(
-        root, CRAWLED_AT, sitemap(), result(stored("/guide", b"Guide"))
-    )
-    selected = {
-        "root": root,
-        "current": root / "current",
-        "snapshot": directory,
-        "manifest": directory / "manifest.json",
-        "raw": directory / "raw",
-    }[component]
-    target = tmp_path / "target"
-    selected.rename(target)
-    selected.symlink_to(target, target_is_directory=target.is_dir())
-
-    with pytest.raises(SnapshotReadError, match="symbolic-link"):
-        snapshot = current_snapshot(root)
-        assert snapshot is not None
-        snapshot.get(f"{DOCS}/guide")
+def test_legacy_format_requires_new_capture_and_preserves_old_files(
+    tmp_path: Path,
+) -> None:
+    saved = snapshot(tmp_path, ("/a", b"A"))
+    manifest = saved.directory / "manifest.json"
+    manifest.write_text('{"version": 1, "pages": []}')
+    with pytest.raises(SnapshotReadError, match="crawl again"):
+        current_snapshot(tmp_path)
+    assert manifest.read_text() == '{"version": 1, "pages": []}'
 
 
-def test_current_rejects_a_path_outside_the_snapshot_directory(tmp_path: Path) -> None:
-    (tmp_path / "current").write_text("..\n")
+def test_manifest_cannot_read_a_path_outside_snapshot(tmp_path: Path) -> None:
+    saved = snapshot(tmp_path, ("/a", b"A"))
+    manifest = saved.directory / "manifest.json"
+    payload = json.loads(manifest.read_text())
+    payload["pages"][0]["path"] = "../../outside.html"
+    manifest.write_text(json.dumps(payload))
+    loaded = current_snapshot(tmp_path)
+    assert loaded is not None
+    with pytest.raises(SnapshotReadError, match="Invalid snapshot path"):
+        loaded.get(DOCS + "/a")
 
-    with pytest.raises(SnapshotReadError, match="successful snapshot directory"):
+
+def test_current_must_name_a_local_directory(tmp_path: Path) -> None:
+    (tmp_path / "current").write_text("../outside")
+    with pytest.raises(SnapshotReadError):
         current_snapshot(tmp_path)
 
 
-def test_failed_snapshot_preserves_current_and_previous_snapshot(
-    tmp_path: Path,
-) -> None:
-    previous = write_snapshot(
-        tmp_path,
-        CRAWLED_AT,
-        sitemap(),
-        result(stored("/", b"<main>Previous</main>")),
-    )
-    previous_manifest = (previous / "manifest.json").read_bytes()
-
-    destination = write_snapshot(
-        tmp_path,
-        CRAWLED_AT + timedelta(seconds=1),
-        sitemap(),
-        result(
-            stored("/partial", b"<main>Partial</main>"),
-            failed("/broken"),
-            complete=False,
-        ),
-    )
-
-    assert destination.name == "20260903T120001Z-failed"
-    assert (tmp_path / "current").read_text() == f"{previous.name}\n"
-    assert (previous / "manifest.json").read_bytes() == previous_manifest
-    assert (destination / "raw" / "partial.html").exists()
-    report = (destination / "report.md").read_text()
-    assert "- Status: failed" in report
-    assert "FetchError" in report
-    assert f"{DOCS}/broken" in report
+def test_distinct_urls_do_not_overwrite_raw_files(tmp_path: Path) -> None:
+    saved = snapshot(tmp_path, ("/", b"Root"), ("/index", b"Index"))
+    assert saved.get(DOCS + "/") == b"Root"
+    assert saved.get(DOCS + "/index") == b"Index"
 
 
-def test_slug_collision_fails_without_promotion(tmp_path: Path) -> None:
-    crawl_result = result(
-        stored("/", b"<main>Root</main>"),
-        stored("/index", b"<main>Index</main>"),
-    )
-
-    with pytest.raises(SnapshotCollisionError, match="slug collision"):
-        write_snapshot(tmp_path, CRAWLED_AT, sitemap(), crawl_result)
-
-    assert not (tmp_path / "current").exists()
-    assert not (tmp_path / "20260903T120000Z").exists()
-    assert not list(tmp_path.glob(".snapshot-*"))
+def test_manifest_rejects_noncanonical_page_identity(tmp_path: Path) -> None:
+    saved = snapshot(tmp_path, ("/a", b"A"))
+    manifest = saved.directory / "manifest.json"
+    payload = json.loads(manifest.read_text())
+    payload["pages"][0]["url"] = "https://docs.mistral.ai/en/a/"
+    manifest.write_text(json.dumps(payload))
+    with pytest.raises(SnapshotReadError, match="canonical"):
+        current_snapshot(tmp_path)

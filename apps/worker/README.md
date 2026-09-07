@@ -47,11 +47,17 @@ A retry repairs an unconfirmed page even if its content reverts to an old value.
 On the first refresh after migration, existing pages have no confirmation and
 are indexed once. Subsequent unchanged pages require no embeddings or writes.
 
-The existing HTTP adapter is reused per activity, including robots checks and
-bounded HTTP retries. It currently reloads robots for each page. Replacing that
-adapter with a crawler library and adding conditional HTTP caching remain
-separate work. Each refresh downloads current HTML; retries have no frozen copy.
-A redirect to another page is returned to the queue before that page is fetched.
+Crawlee 1.10.0 handles HTTP requests, HTML parsing and the standalone capture
+queue. Docstral keeps URL identity, exclusions and response classification.
+The sitemap uses the same HTTP client and a short strict XML parser; a failed
+fetch or malformed sitemap never becomes an empty inventory.
+
+Each activity reloads robots and fetches fresh HTML. Crawlee retries are disabled
+inside activities; the three native attempts handle temporary download failures.
+Robots permissions and `Crawl-delay` remain; `Request-rate`, custom HTTP backoff,
+ETag caching and the old `Retry-After > 30s` failure rule have been removed.
+A redirect to another page returns its destination before downloading it.
+HTML and XHTML both return links, including links from unchanged pages.
 MCP stays available while pages are updated; page replacement is not transactional.
 
 Only one refresh may run against a corpus, and none may start during deployment.
@@ -60,8 +66,48 @@ graph, pause scheduling and let old executions finish with the old worker.
 Verify a fresh refresh and an unchanged run before resuming hourly scheduling.
 See [deployment](../../deployment/README.md) for migration and rollout.
 
-Local `docstral-worker crawl`, `docstral-worker extract` and `make ingest` remain
-available separately. They use local snapshots; `make ingest` rebuilds local Vespa.
+## Local startup
+
+From the repository root, set `MISTRAL_API_KEY` in `.env` and run `make local`.
+The launcher uses a stable `docstral-local-…` deployment derived from this machine
+and Vespa container/ports. It explicitly routes `{}` to `docstral-refresh` there
+and overrides `VESPA_ENDPOINT` with localhost, even if `.env` contains production
+values. The activity graph and refresh defaults are identical to production.
+
+On an empty corpus it waits for the first refresh before starting MCP. A corpus
+with confirmed pages is reused. `make refresh` requests an update and exits;
+an already active local execution is resumed instead of duplicated. A resumed
+execution finishes before migrations. Run only one startup/update command at a
+time. Ctrl+C stops the processes started by that command, keeping Vespa data;
+a later command can reconnect to an unfinished native execution. Changed workflow
+graphs still require finishing old executions with compatible worker code.
+
+For separate local instances, override `VESPA_CONTAINER`, `VESPA_QUERY_PORT` and
+`VESPA_CONFIG_PORT` on the make command. `DOCSTRAL_MCP_PORT` selects the MCP port.
+The key must permit native Workflows and embeddings. No schedule or local
+pending marker is created. `make mcp` remains available for an already running,
+indexed Vespa instance.
+
+## Explicit offline snapshots
+
+```sh
+make crawl       # fresh HTML capture; no embeddings
+make extract     # convert current capture to Markdown without network
+make ingest      # rebuild local Vespa from current capture
+```
+
+These tools are separate from normal startup. Capture uses the shared Crawlee
+adapter with at most three attempts per page and a memory queue. The summary
+contains stored, ignored and failed counts plus actionable errors. A complete
+capture writes raw HTML and a version-2 manifest containing date, canonical URL,
+relative path and HTML hash, then atomically replaces `current`. Incomplete
+captures leave `current` unchanged and are not archived.
+
+Readers validate the manifest, local paths and one HTML hash per page read.
+Older snapshot formats fail with an instruction to crawl again; old directories
+are left untouched. Extraction remains offline, and explicit snapshot ingestion
+uses the same page indexer as the native workflow. Markdown citation hashes and
+indexing fingerprints are unchanged.
 
 Checks: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`,
 `uv run pytest`, `uv run pre-commit run --all-files`.

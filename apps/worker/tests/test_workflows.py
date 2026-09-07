@@ -8,8 +8,8 @@ from docstral_worker.refresh.models import RefreshResult
 from docstral_worker.refresh.workflow import RefreshDocumentation
 from mistralai import workflows
 from temporalio.testing import ActivityEnvironment
-from test_page_refresh import Services
-from test_page_refresh import services as services
+from worker_fixtures import Services
+from worker_fixtures import services as services
 
 
 async def refresh() -> RefreshResult:

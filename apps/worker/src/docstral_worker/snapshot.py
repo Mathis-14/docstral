@@ -1,318 +1,139 @@
-from __future__ import annotations
-
-import os
-import re
-import stat
-from collections import Counter
-from datetime import UTC, datetime
+from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from urllib.parse import urlsplit
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from docstral_worker import IngestionError
-from docstral_worker.crawl import (
-    CachedPage,
-    CrawlCounts,
-    CrawlEntry,
-    CrawlResult,
-    PageDecision,
-)
-from docstral_worker.sitemap import SitemapSnapshot
-
-MANIFEST_FILE = "manifest.json"
-REPORT_FILE = "report.md"
-CURRENT_FILE = "current"
-_SUCCESSFUL_SNAPSHOT_NAME = re.compile(r"\d{8}T\d{6}Z")
+from docstral_worker.crawl import SHA256_PATTERN, CrawlResult
+from docstral_worker.urls import admit, canonicalize
 
 
-class SnapshotError(IngestionError):
+class SnapshotReadError(IngestionError):
     pass
 
 
-class SnapshotReadError(SnapshotError):
-    def __init__(self, path: Path, detail: str) -> None:
-        self.path = path
-        super().__init__(f"Cannot read snapshot {str(path)!r}: {detail}")
+class SnapshotPage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
+    url: str
+    path: str
+    sha256: str = Field(pattern=SHA256_PATTERN)
 
-class SnapshotWriteError(SnapshotError):
-    def __init__(self, path: Path, detail: str) -> None:
-        self.path = path
-        super().__init__(f"Cannot write snapshot {str(path)!r}: {detail}")
-
-
-class SnapshotCollisionError(SnapshotWriteError):
-    pass
+    @field_validator("url")
+    @classmethod
+    def canonical_documentation_url(cls, value: str) -> str:
+        target = canonicalize(value, value)
+        if target.url != value or not admit(target).admitted:
+            raise ValueError("Snapshot URL must be canonical and in scope")
+        return value
 
 
 class SnapshotManifest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    version: Literal[2]
     crawled_at: datetime
-    sitemap_url: str
-    sitemap_sha256: str
-    counts: CrawlCounts
-    pages: tuple[CrawlEntry, ...]
-
-    @model_validator(mode="after")
-    def validate_invariants(self) -> SnapshotManifest:
-        urls = [page.canonical_url for page in self.pages]
-        if urls != sorted(urls) or len(urls) != len(set(urls)):
-            raise ValueError("pages must have distinct canonical URLs in sorted order")
-        _validate_counts(self.pages, self.counts)
-        _validate_page_states(self.pages)
-        return self
+    pages: tuple[SnapshotPage, ...]
 
 
 class CurrentSnapshot:
     def __init__(self, directory: Path, manifest: SnapshotManifest) -> None:
         self.directory = directory
         self.manifest = manifest
-        self._pages = {
-            page.canonical_url: page
-            for page in manifest.pages
-            if page.decision is PageDecision.STORED
-        }
+        self._pages = {page.url: page for page in manifest.pages}
+        if len(self._pages) != len(manifest.pages):
+            raise SnapshotReadError("Snapshot contains duplicate page URLs")
 
-    def get(self, canonical_url: str) -> CachedPage | None:
-        page = self._pages.get(canonical_url)
+    def get(self, url: str) -> bytes:
+        page = self._pages.get(url)
         if page is None:
-            return None
-        if page.raw_sha256 is None:
-            raise SnapshotReadError(
-                self.directory / MANIFEST_FILE,
-                f"invalid raw metadata for {canonical_url!r}",
-            )
-        path = self.directory / _raw_path(canonical_url)
-        body = _read_regular_file(path)
-        if sha256(body).hexdigest() != page.raw_sha256:
-            raise SnapshotReadError(
-                path, "raw HTML integrity check failed: recorded SHA-256 does not match"
-            )
-        return CachedPage(
-            etag=page.etag,
-            raw_sha256=page.raw_sha256,
-            body=body,
-        )
+            raise SnapshotReadError(f"Page {url!r} is missing from the snapshot")
+        try:
+            body = _read(self.directory, page.path)
+            if sha256(body).hexdigest() != page.sha256:
+                raise SnapshotReadError(f"HTML hash mismatch for {url!r}; crawl again")
+            return body
+        except OSError as error:
+            raise SnapshotReadError(f"Cannot read HTML for {url!r}: {error}") from error
 
 
-def current_snapshot(out: Path) -> CurrentSnapshot | None:
-    pointer = out / CURRENT_FILE
-    _reject_symlinks(pointer)
-    if not pointer.exists():
+def _read(root: Path, relative: str) -> bytes:
+    path = root / relative
+    if Path(relative).is_absolute() or ".." in Path(relative).parts:
+        raise SnapshotReadError(f"Invalid snapshot path: {relative!r}")
+    current = root
+    for part in Path(relative).parts:
+        current = current / part
+        if current.is_symlink():
+            raise SnapshotReadError(f"Snapshot path is a symbolic link: {current}")
+    if not path.is_file():
+        raise SnapshotReadError(f"Snapshot file is missing or not regular: {path}")
+    return path.read_bytes()
+
+
+def current_snapshot(root: Path) -> CurrentSnapshot | None:
+    if not (root / "current").exists() and not (root / "current").is_symlink():
         return None
     try:
-        name = _read_regular_file(pointer).decode("utf-8").strip()
-    except (OSError, UnicodeError) as exc:
-        raise SnapshotReadError(pointer, str(exc)) from exc
-    if _SUCCESSFUL_SNAPSHOT_NAME.fullmatch(name) is None:
-        raise SnapshotReadError(pointer, "must name one successful snapshot directory")
-
-    directory = out / name
-    manifest_path = directory / MANIFEST_FILE
-    try:
-        manifest_bytes = _read_regular_file(manifest_path)
-        manifest = SnapshotManifest.model_validate_json(manifest_bytes)
-    except (OSError, UnicodeError, ValidationError) as exc:
-        raise SnapshotReadError(manifest_path, str(exc)) from exc
-    return CurrentSnapshot(directory, manifest)
+        name = _read(root, "current").decode().strip()
+        if not name or Path(name).name != name or name in (".", ".."):
+            raise SnapshotReadError("Invalid current snapshot directory")
+        payload = _read(root, f"{name}/manifest.json")
+        manifest = SnapshotManifest.model_validate_json(payload)
+        return CurrentSnapshot(root / name, manifest)
+    except (IngestionError, OSError, UnicodeError, ValidationError) as error:
+        raise SnapshotReadError(
+            f"Cannot read snapshot; run docstral-worker crawl again: {error}"
+        ) from error
 
 
-def _reject_symlinks(path: Path) -> None:
-    if any(part.is_symlink() for part in (path, *path.parents)):
-        raise SnapshotReadError(path, "symbolic-link paths are not allowed")
-
-
-def _read_regular_file(path: Path) -> bytes:
-    _reject_symlinks(path)
-    try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(descriptor, "rb") as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                raise SnapshotReadError(path, "a regular snapshot file is required")
-            return stream.read()
-    except OSError as exc:
-        raise SnapshotReadError(path, str(exc)) from exc
+def page_slug(url: str) -> str:
+    return sha256(url.encode()).hexdigest()
 
 
 def write_snapshot(
-    out: Path,
-    crawled_at: datetime,
-    sitemap: SitemapSnapshot,
-    result: CrawlResult,
-) -> Path:
-    destination = out / _snapshot_name(crawled_at, result.complete)
+    root: Path, crawled_at: datetime, result: CrawlResult
+) -> Path | None:
+    if not result.complete:
+        return None
+    name = crawled_at.strftime("%Y%m%dT%H%M%S%fZ")
+    destination = root / name
     if destination.exists():
-        raise SnapshotCollisionError(destination, "destination already exists")
+        raise IngestionError(f"Snapshot already exists: {destination}")
     try:
-        out.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(prefix=".snapshot-", dir=out) as temporary:
-            temporary_path = Path(temporary)
-            _write_raw_pages(temporary_path, result.pages)
-            manifest = SnapshotManifest(
-                crawled_at=crawled_at,
-                sitemap_url=sitemap.url,
-                sitemap_sha256=sitemap.sha256,
-                counts=result.counts,
-                pages=result.pages,
-            )
-            (temporary_path / MANIFEST_FILE).write_text(
-                f"{manifest.model_dump_json(indent=2)}\n", encoding="utf-8"
-            )
-            (temporary_path / REPORT_FILE).write_text(
-                _render_report(manifest, result), encoding="utf-8"
-            )
-            temporary_path.rename(destination)
-        if result.complete:
-            _replace_current(out, destination.name)
-    except SnapshotError:
-        raise
-    except (OSError, ValueError) as exc:
-        raise SnapshotWriteError(destination, str(exc)) from exc
-    return destination
-
-
-def _write_raw_pages(directory: Path, pages: tuple[CrawlEntry, ...]) -> None:
-    raw_directory = directory / "raw"
-    raw_directory.mkdir()
-    paths: dict[str, str] = {}
-    for page in sorted(pages, key=lambda item: item.canonical_url):
-        if page.decision is not PageDecision.STORED:
-            continue
-        if page.body is None or page.raw_sha256 is None:
-            raise SnapshotWriteError(
-                directory, f"missing raw body for {page.canonical_url!r}"
-            )
-        if sha256(page.body).hexdigest() != page.raw_sha256:
-            raise SnapshotWriteError(
-                directory, f"raw SHA-256 mismatch for {page.canonical_url!r}"
-            )
-        raw_path = _raw_path(page.canonical_url)
-        previous_url = paths.setdefault(raw_path, page.canonical_url)
-        if previous_url != page.canonical_url:
-            raise SnapshotCollisionError(
-                directory / raw_path,
-                f"slug collision between {previous_url!r} and {page.canonical_url!r}",
-            )
-        (directory / raw_path).write_bytes(page.body)
-
-
-def _raw_path(canonical_url: str) -> str:
-    return f"raw/{page_slug(canonical_url)}.html"
-
-
-def page_slug(canonical_url: str) -> str:
-    path = urlsplit(canonical_url).path.strip("/")
-    return path.replace("/", "__") if path else "index"
-
-
-def _snapshot_name(crawled_at: datetime, complete: bool) -> str:
-    if crawled_at.tzinfo is None:
-        raise ValueError("crawled_at must be timezone-aware")
-    name = crawled_at.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return name if complete else f"{name}-failed"
-
-
-def _replace_current(out: Path, snapshot_name: str) -> None:
-    temporary_path: Path | None = None
-    try:
-        with NamedTemporaryFile(
-            mode="w", encoding="utf-8", prefix=".current-", dir=out, delete=False
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            temporary.write(f"{snapshot_name}\n")
-        os.replace(temporary_path, out / CURRENT_FILE)
-    except OSError as exc:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
-        raise SnapshotWriteError(out / CURRENT_FILE, str(exc)) from exc
-
-
-def _validate_counts(pages: tuple[CrawlEntry, ...], counts: CrawlCounts) -> None:
-    decisions = Counter(page.decision for page in pages)
-    if (
-        decisions[PageDecision.STORED] != counts.stored
-        or decisions[PageDecision.REJECTED] != counts.rejected
-        or decisions[PageDecision.FAILED] != counts.failed
-    ):
-        raise ValueError("page decisions do not match counts")
-    rejections = Counter(page.reason for page in pages if page.reason is not None)
-    if dict(rejections) != counts.rejections:
-        raise ValueError("page rejection reasons do not match counts")
-
-
-def _validate_page_states(pages: tuple[CrawlEntry, ...]) -> None:
-    raw_paths: set[str] = set()
-    for page in pages:
-        if page.decision is PageDecision.STORED:
-            if page.raw_sha256 is None:
-                raise ValueError(
-                    f"stored page {page.canonical_url!r} lacks raw metadata"
+        root.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix=".snapshot-", dir=root) as temporary:
+            staging = Path(temporary)
+            (staging / "raw").mkdir()
+            pages: list[SnapshotPage] = []
+            for page in result.pages:
+                if page.status != "downloaded":
+                    continue
+                relative = f"raw/{page_slug(page.url)}.html"
+                (staging / relative).write_bytes(page.body)
+                pages.append(
+                    SnapshotPage(
+                        url=page.url,
+                        path=relative,
+                        sha256=sha256(page.body).hexdigest(),
+                    )
                 )
-            raw_path = _raw_path(page.canonical_url)
-            if raw_path in raw_paths:
-                raise ValueError(f"duplicate raw path {raw_path!r}")
-            raw_paths.add(raw_path)
-        elif page.decision is PageDecision.REJECTED and page.reason is None:
-            raise ValueError(f"rejected page {page.canonical_url!r} lacks a reason")
-        elif page.decision is PageDecision.FAILED and (
-            page.error_type is None or page.error_message is None
-        ):
-            raise ValueError(f"failed page {page.canonical_url!r} lacks error context")
-
-
-def _render_report(manifest: SnapshotManifest, result: CrawlResult) -> str:
-    status = "complete" if result.complete else "failed"
-    counts = manifest.counts
-    lines = [
-        "# Crawl report",
-        "",
-        f"- Status: {status}",
-        f"- Crawled at: {manifest.crawled_at.isoformat()}",
-        f"- Sitemap URLs: {counts.sitemap_english + counts.sitemap_french}",
-        f"- Pages admitted: {counts.admitted}",
-        f"- Pages stored: {counts.stored}",
-        f"- Pages discovered by links: {counts.discovered_by_link}",
-        f"- HTTP 200: {counts.status_200}",
-        f"- HTTP 304: {counts.status_304}",
-        f"- Redirects: {counts.redirects}",
-        f"- External links: {counts.external_links}",
-        f"- Malformed links: {counts.malformed_links}",
-        f"- Failures: {counts.failed}",
-        f"- Duration: {result.duration_seconds:.3f} s",
-        "",
-        "## Rejections",
-        "",
-        "| Reason | Count |",
-        "| --- | ---: |",
-    ]
-    lines.extend(
-        f"| {reason.value} | {count} |"
-        for reason, count in sorted(
-            counts.rejections.items(), key=lambda item: item[0].value
-        )
-    )
-    lines.extend(_failure_report(manifest.pages))
-    return "\n".join(lines) + "\n"
-
-
-def _failure_report(pages: tuple[CrawlEntry, ...]) -> list[str]:
-    lines = ["", "## Failures", ""]
-    failures = [page for page in pages if page.decision is PageDecision.FAILED]
-    if not failures:
-        lines.append("None.")
-    else:
-        lines.extend(["| URL | Error | Message |", "| --- | --- | --- |"])
-        lines.extend(
-            f"| {_cell(page.canonical_url)} | {_cell(page.error_type)} | "
-            f"{_cell(page.error_message)} |"
-            for page in failures
-        )
-    return lines
-
-
-def _cell(value: str | None) -> str:
-    return (value or "").replace("|", "\\|").replace("\n", " ")
+            manifest = SnapshotManifest(
+                version=2, crawled_at=crawled_at, pages=tuple(pages)
+            )
+            (staging / "manifest.json").write_text(manifest.model_dump_json(indent=2))
+            staging.rename(destination)
+        with NamedTemporaryFile(
+            mode="w", prefix=".current-", dir=root, delete=False
+        ) as pointer:
+            pointer.write(f"{name}\n")
+        try:
+            Path(pointer.name).replace(root / "current")
+        finally:
+            Path(pointer.name).unlink(missing_ok=True)
+    except OSError as error:
+        raise IngestionError(f"Cannot write snapshot {destination}: {error}") from error
+    return destination

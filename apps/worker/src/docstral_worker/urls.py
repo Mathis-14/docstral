@@ -25,8 +25,6 @@ EXCLUDED_ROUTES = (
 
 
 class UrlCanonicalizationError(IngestionError):
-    """Raised when a URL cannot be parsed safely."""
-
     def __init__(self, url: str, base: str) -> None:
         self.url = _safe_url(url)
         self.base = _safe_url(base)
@@ -38,10 +36,6 @@ class RejectionReason(StrEnum):
     FRENCH = "french"
     ASSET = "asset"
     EXCLUDED_ROUTE = "excluded_route"
-    NON_HTML = "non_html"
-    GONE = "gone"
-    DUPLICATE = "duplicate"
-    ROBOTS_DISALLOWED = "robots_disallowed"
 
 
 class CanonicalUrl(BaseModel):
@@ -63,7 +57,6 @@ class AdmissionDecision(BaseModel):
 
 
 def canonicalize(url: str, base: str) -> CanonicalUrl:
-    """Resolve a URL, removing its query and userinfo and returning its fragment."""
     try:
         parts = urlsplit(urljoin(base, url))
         scheme = parts.scheme.lower()
@@ -86,7 +79,6 @@ def canonicalize(url: str, base: str) -> CanonicalUrl:
 
 
 def admit(url: CanonicalUrl) -> AdmissionDecision:
-    """Apply the version 1 URL admission rules without retaining state."""
     if not is_docs_url(url.url):
         return _rejected(url, RejectionReason.OUTSIDE_HOST)
     parts = urlsplit(url.url)

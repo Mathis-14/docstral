@@ -14,7 +14,7 @@ from mistralai.search.toolkit.ingestion.extractors.html_converter import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from docstral_worker import IngestionError, _safe_url
-from docstral_worker.crawl import SHA256_PATTERN, PageDecision
+from docstral_worker.crawl import SHA256_PATTERN
 from docstral_worker.snapshot import CurrentSnapshot, page_slug
 
 _TITLE_SUFFIX = " | Mistral Docs"
@@ -130,27 +130,14 @@ def extract_snapshot(snapshot: CurrentSnapshot, destination: Path) -> ExtractRes
     started_at = monotonic()
     converted = 0
     failed = 0
-    stored = [
-        page for page in snapshot.manifest.pages if page.decision is PageDecision.STORED
-    ]
     try:
         pages_directory = destination / "pages"
         pages_directory.mkdir(parents=True)
-        for entry in stored:
+        for entry in snapshot.manifest.pages:
             page_started_at = monotonic()
             try:
-                cached = snapshot.get(entry.canonical_url)
-                if cached is None:
-                    raise ExtractionError(
-                        f"Stored page {entry.canonical_url!r} missing from snapshot"
-                    )
-                if sha256(cached.body).hexdigest() != cached.raw_sha256:
-                    raise ExtractionError(
-                        f"Raw HTML for {entry.canonical_url!r} does not match its "
-                        "recorded SHA-256"
-                    )
-                page = extract_page(entry.canonical_url, cached.body)
-                slug = page_slug(entry.canonical_url)
+                page = extract_page(entry.url, snapshot.get(entry.url))
+                slug = page_slug(entry.url)
                 (pages_directory / f"{slug}.md").write_text(
                     page.markdown, encoding="utf-8"
                 )
@@ -158,7 +145,7 @@ def extract_snapshot(snapshot: CurrentSnapshot, destination: Path) -> ExtractRes
                 failed += 1
                 logger.info(
                     "extraction_page",
-                    url=entry.canonical_url,
+                    url=entry.url,
                     decision="failed",
                     duration_ms=round((monotonic() - page_started_at) * 1_000, 3),
                     error_type=type(exc).__name__,
@@ -168,7 +155,7 @@ def extract_snapshot(snapshot: CurrentSnapshot, destination: Path) -> ExtractRes
             converted += 1
             logger.info(
                 "extraction_page",
-                url=entry.canonical_url,
+                url=entry.url,
                 decision="converted",
                 duration_ms=round((monotonic() - page_started_at) * 1_000, 3),
                 chars=page.chars,

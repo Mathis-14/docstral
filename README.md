@@ -2,53 +2,44 @@
 
 Accurate, grounded Q&A over Mistral's public documentation, exposed through an MCP server.
 
-## Setup
+## Start locally
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), start Docker
+with at least 4 GB available, and use a Mistral API key with Workflows,
+embeddings and answer-model access.
 
 ```sh
-uv sync --all-packages
-uv run pre-commit install
 cp .env.example .env
+# Set MISTRAL_API_KEY in .env
+make local
 ```
 
-Set `MISTRAL_API_KEY` in `.env`.
+The first launch starts Vespa, applies the schema, starts a local worker and
+runs the same `docstral-refresh` workflow as production. Once pages are indexed,
+MCP starts at `http://127.0.0.1:8000/mcp`. Later launches reuse the corpus.
+The workflow history lives in Mistral; local execution still requires internet.
 
-## Architecture
+Run `make refresh` to update the corpus explicitly. Ctrl+C stops the launched
+worker and MCP while preserving Vespa data. No schedule is created automatically.
+A partial refresh is printed with its failed URLs; MCP requires at least one
+confirmed indexed page. See the [worker guide](apps/worker/README.md) for settings,
+recovery and explicit offline snapshot commands.
 
-- `apps/worker`: crawling, extraction and indexing.
-- `apps/backend`: retrieval and grounded Q&A, imported by MCP.
-- `apps/mcp`: FastMCP server.
-- `packages/vespa`: shared schema and index constructor.
-
-## Local corpus
-
-Start Docker. `make ingest` replaces the existing local index.
-
-```sh
-uv run docstral-worker crawl
-uv run docstral-worker extract
-make ingest
-```
-
-## MCP
-
-Vespa must be running with an indexed corpus.
 `DOCSTRAL_ANSWER_MODEL` selects the answer model (default: `ministral-8b-2512`);
 restart MCP after changing it. Embeddings and the corpus are unchanged.
 
-```sh
-make mcp
-```
-
-In another terminal, connect Vibe to the local Streamable HTTP endpoint:
+With [Vibe](https://docs.mistral.ai/vibe/code/cli) installed, register the local
+MCP server once:
 
 ```sh
-vibe mcp add docstral \
-  --url http://127.0.0.1:8000/mcp \
-  --transport streamable-http \
-  --header X-Docstral-Client=vibe
+make vibe
 ```
 
-The non-secret header selects Vibe's static mode. This command does not enable OAuth.
+Vibe reports when the same server is already configured and leaves conflicting
+configurations unchanged. The command uses `DOCSTRAL_MCP_PORT` from `.env`
+(default: 8000). Its non-secret header selects Vibe's static mode without OAuth.
+Run `make vibe local` to register the server and then start the local environment.
+Restart Vibe and use `/mcp docstral` to check its tools.
 
 ### Google OAuth (invited users)
 
@@ -97,7 +88,7 @@ uv run --env-file .env docker run --rm --platform linux/amd64 \
 
 This serves `/mcp` without authentication. Images run as UID/GID 1000 and contain
 no corpus or secrets. Mount worker data at `/app/data`; run local ingestion on
-the host. See [cluster publication](apps/worker/README.md) and
+the host. See [native refresh](apps/worker/README.md) and
 [deployment](deployment/README.md). Cluster provisioning is separate.
 
 ## Evaluation
@@ -107,3 +98,13 @@ retrieval and Ragas metrics, and baseline reproduction commands.
 [Results](evals/RESULTS.md) compare the measured alternatives, timings,
 and limitations. Evaluations are local only, outside CI and production;
 experimental pipelines are not enabled in the application.
+
+## Architecture and development
+
+- `apps/worker`: crawling, extraction and incremental indexing.
+- `apps/backend`: retrieval and grounded Q&A, imported as a library by MCP.
+- `apps/mcp`: FastMCP server.
+- `packages/vespa`: shared schema and index constructor.
+- `deployment/local.py`: local process startup and explicit workflow routing.
+
+Run `uv run pre-commit install` once, then `make check` for local checks.
